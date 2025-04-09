@@ -6,6 +6,7 @@ const cors = require("cors");
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { ObjectId } = require('mongodb');
+const crypto = require("crypto");
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -556,32 +557,10 @@ app.get('/api/staff-info/:username', async (req, res) => {
 });
 
 // Update staff account info
-// app.post('/api/update-staffAccount', async (req, res) => {
-//   try {
-//     const { staffUsername, staffFullname, email, region, houseStreet, phoneNumber, contactPerson } = req.body;
-//     if (!staffUsername) {
-//       return res.status(400).json({ message: 'Username is required.' });
-//     }
-    
-//     const updateData = { staffFullname, email, region, houseStreet, phoneNumber, contactPerson };
-//     const result = await db.collection('staff').updateOne(
-//       { username: staffUsername },
-//       { $set: updateData }
-//     );
-    
-//     if (result.matchedCount === 0) {
-//       return res.status(404).json({ message: 'Staff not found.' });
-//     }
-//     res.status(200).json({ message: 'Account updated successfully.' });
-//   } catch (err) {
-//     console.error('Error updating staff account:', err);
-//     res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
 app.post('/api/update-staffAccount', async (req, res) => {
   try {
     const { staffUsername, staffFullname, email, region, houseStreet, phoneNumber, contactPerson, newPassword } = req.body;
-    
+
     if (!staffUsername) {
       return res.status(400).json({ message: 'Username is required.' });
     }
@@ -652,47 +631,17 @@ app.get('/api/get-staffprofile-picture/:username', async (req, res) => {
   }
 });
 
-// API to add a new product
-// app.post('/api/add-product', async (req, res) => {
-//   try {
-//     const { staffUsername, productName, category, subCategory, brand, gender, size, color, quantity, price, imageUrl } = req.body;
-
-//     if (!staffUsername || !productName || !category || !brand || !color || !quantity || !price || !imageUrl) {
-//       return res.status(400).json({ message: 'All fields including imageUrl are required.' });
-//     }
-
-//     const newProduct = {
-//       staffUsername,
-//       productName,
-//       category,
-//       subCategory: subCategory?.trim() || null,  // Set null if empty
-//       brand,
-//       gender: gender?.trim() || null,  // Set null if empty
-//       size: size?.trim() || null,  // Set null if empty
-//       color,
-//       quantity,
-//       price,
-//       imageUrl,
-//       createdAt: new Date(),
-//     };
-
-//     await db.collection('products').insertOne(newProduct);
-//     return res.status(201).json({ message: 'Product added successfully.' });
-//   } catch (err) {
-//     console.error('Error adding product:', err);
-//     return res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
+// API to add a new product (Modified 4/7)
 app.post('/api/add-product', async (req, res) => {
   try {
-    const { staffUsername, productName, category, subCategory, brand, gender, size, color, quantity, price, imageUrl, supplierName, supplierContact, supplierEmail, supplierRegion, supplierHouseStreet, supplierPhone } = req.body;
+    const { staffUsername, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
 
-    if (!staffUsername || !productName || !category || !brand || !color || !quantity || !price || !imageUrl || !supplierName) {
-      return res.status(400).json({ message: 'All fields including supplier are required.' });
+    if (!productName || !category || !brand || !color || !imageUrl) {
+      return res.status(400).json({ message: 'Missing required fields.' });
     }
 
     const newProduct = {
-      staffUsername,
+      ...(staffUsername && { staffUsername }),
       productName,
       category,
       subCategory: subCategory?.trim() || null,
@@ -700,15 +649,7 @@ app.post('/api/add-product', async (req, res) => {
       gender: gender?.trim() || null,
       size: size?.trim() || null,
       color,
-      quantity,
-      price,
       imageUrl,
-      supplierName,
-      supplierContact,
-      supplierEmail,
-      supplierRegion,
-      supplierHouseStreet,
-      supplierPhone,
       createdAt: new Date(),
     };
 
@@ -721,21 +662,7 @@ app.post('/api/add-product', async (req, res) => {
 });
 
 // Fetch products for a specific staff user
-app.get('/api/staffProducts', async (req, res) => {
-  try {
-    const { staffUsername } = req.query; // Get staffUsername from query parameters
-
-    if (!staffUsername) {
-      return res.status(400).json({ message: 'Staff username is required.' });
-    }
-
-    const products = await db.collection('products').find({ staffUsername }).toArray();
-    res.status(200).json(products);
-  } catch (err) {
-    console.error('Error fetching products:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+// Remove (4/7)
 
 // Fetch products with quantity less than 10
 app.get('/api/products-low-stock', async (req, res) => {
@@ -752,7 +679,7 @@ app.get('/api/products-low-stock', async (req, res) => {
 app.put('/api/update-product/:id', async (req, res) => {
   try {
     const productId = req.params.id;
-    const { productName, category, subCategory, gender, size, color, quantity, price, imageUrl } = req.body;
+    const { productName, category, subCategory, gender, size, color, imageUrl } = req.body;
 
     if (!productId) {
       return res.status(400).json({ message: 'Product ID is required.' });
@@ -765,8 +692,6 @@ app.put('/api/update-product/:id', async (req, res) => {
       ...(gender && { gender }),
       ...(size && { size }),
       ...(color && { color }),
-      ...(quantity && { quantity: parseInt(quantity) }),
-      ...(price && { price: parseFloat(price) }),
       ...(imageUrl && { imageUrl }),
       updatedAt: new Date(),
     };
@@ -810,44 +735,7 @@ app.delete('/api/delete-product/:id', async (req, res) => {
 });
 
 // API to place an order
-// app.post('/api/place-order', async (req, res) => {
-//   try {
-//     const { username, selectedItems, paymentMethod, shippingOptions } = req.body;
-
-//     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
-//       return res.status(400).json({ message: 'Invalid order request.' });
-//     }
-
-//     const userOrders = db.collection('userShipping'); // Order collection
-//     const userCart = db.collection('userCart');
-
-//     const orderItems = selectedItems.map(item => ({
-//       username,
-//       productId: item.productId,
-//       productName: item.productName,
-//       price: item.price,
-//       quantity: item.quantity,
-//       paymentMethod, // Store payment method in database
-//       shippingDate: shippingOptions[item._id] || 'Standard',
-//       imageUrl: item.imageUrl,
-//       orderedAt: new Date(),
-//     }));
-
-//     // Insert order
-//     await userOrders.insertMany(orderItems);
-
-//     // Remove ordered items from cart
-//     await userCart.deleteMany({
-//       username,
-//       _id: { $in: selectedItems.map(item => (item._id)) }
-//     });
-
-//     res.status(200).json({ message: 'Order placed successfully.', orderItems });
-//   } catch (error) {
-//     console.error('Error placing order:', error);
-//     res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
+// Remove (4/7)
 
 // API to fetch user shipping details based on staffUsername
 app.get('/api/staff-shipping/:staffUsername', async (req, res) => {
@@ -893,33 +781,6 @@ app.get('/api/totalstaff-shipping/:staffUsername', async (req, res) => {
 
 // STAFF MAINTENANCE
 // Add a new supplier
-// app.post('/api/add-supplier', async (req, res) => {
-//   try {
-//     const { name, contactPerson, email, region, houseStreet, phone, staffUsername } = req.body;
-
-//     if (!name || !contactPerson || !email || !region || !houseStreet || !phone || !staffUsername) {
-//       return res.status(400).json({ message: "All fields including staffUsername are required." });
-//     }
-
-//     const newSupplier = {
-//       name,
-//       contactPerson,
-//       email,
-//       region,
-//       houseStreet,
-//       phone,
-//       staffUsername,
-//       createdAt: new Date(),
-//     };
-
-//     await db.collection('suppliers').insertOne(newSupplier);
-//     return res.status(201).json({ message: "Supplier added successfully." });
-//   } catch (err) {
-//     console.error("Error adding supplier:", err);
-//     return res.status(500).json({ message: "Internal server error." });
-//   }
-// });
-
 app.post('/api/add-supplier', async (req, res) => {
   try {
     const { name, contactPerson, email, region, houseStreet, phone, staffUsername } = req.body;
@@ -978,7 +839,7 @@ app.post('/api/check-supplier-name', async (req, res) => {
 app.get('/api/staffSuppliers', async (req, res) => {
   try {
     const { staffUsername } = req.query;
-    
+
     // Ensure staffUsername is provided before querying
     if (!staffUsername) {
       return res.status(400).json({ message: "staffUsername is required" });
@@ -1092,16 +953,6 @@ app.get('/api/products', async (req, res) => {
 const productMaintenanceCollection = () => db.collection("productMaintenance");
 
 // Add a new product maintenance entry
-// app.post('/api/product-maintenance', async (req, res) => {
-//   try {
-//     const { category, subCategory, brand, color, sizes } = req.body;
-//     const newEntry = { category, subCategory, brand, color, sizes };
-//     const result = await productMaintenanceCollection().insertOne(newEntry);
-//     res.status(201).json(result);
-//   } catch (error) {
-//     res.status(500).json({ error: "Failed to add product maintenance data." });
-//   }
-// });
 app.post('/api/product-maintenance', async (req, res) => {
   try {
     let { category, subCategory, brand, color, sizes } = req.body;
@@ -1121,42 +972,8 @@ app.post('/api/product-maintenance', async (req, res) => {
   }
 });
 
-app.post('/api/adminAdd-product', async (req, res) => {
-  try {
-    const { productName, category, subCategory, brand, gender, size, color, quantity, price, imageUrl, supplierName, supplierContact, supplierEmail, supplierRegion, supplierHouseStreet, supplierPhone } = req.body;
-
-    if (!productName || !category || !brand || !color || !quantity || !price || !imageUrl || !supplierName) {
-      return res.status(400).json({ message: 'All fields including supplier are required.' });
-    }
-
-    const newProduct = {
-      productName,
-      category,
-      subCategory: subCategory?.trim() || null,
-      brand,
-      gender: gender?.trim() || null,
-      size: size?.trim() || null,
-      color,
-      quantity,
-      price,
-      imageUrl,
-      supplierName,
-      supplierContact,
-      supplierEmail,
-      supplierRegion,
-      supplierHouseStreet,
-      supplierPhone,
-      createdAt: new Date(),
-    };
-
-  await db.collection('products').insertOne(newProduct);
-  res.status(201).json({ message: 'Product added successfully.' });
-  return; // Ensure no further execution
-  } catch (error) {
-    console.error("Error adding product:", error.response ? error.response.data : error.message);
-    alert(error.response ? error.response.data.message : "Failed to add product.");
-  }  
-});
+// Admin add product
+// Remove (4/7)
 
 // Get all product maintenance entries
 app.get('/api/product-maintenance', async (req, res) => {
@@ -1169,20 +986,6 @@ app.get('/api/product-maintenance', async (req, res) => {
 });
 
 // Update product maintenance entry
-// app.put('/api/product-maintenance/:id', async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { category, subCategory, brand, color, sizes } = req.body;
-//     const updatedEntry = { category, subCategory, brand, color, sizes };
-//     const result = await productMaintenanceCollection().updateOne(
-//       { _id: new ObjectId(id) },
-//       { $set: updatedEntry }
-//     );
-//     res.status(200).json(result);
-//   } catch (error) {
-//     res.status(500).json({ error: "Failed to update product maintenance data." });
-//   }
-// });
 app.put('/api/product-maintenance/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1269,6 +1072,381 @@ app.get('/api/suppliers', async (req, res) => {
     res.status(200).json(suppliers);
   } catch (err) {
     console.error('Error fetching suppliers:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// DELIVERY PRODUCT
+// app.post('/api/add-delivery', async (req, res) => {
+//   try {
+//     const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
+
+//     if (!productId || !supplierId || !supplierPrice || !shopPrice || !quantity || !staffUsername) {
+//       return res.status(400).json({ message: "Missing required fields." });
+//     }
+
+//     const newDelivery = {
+//       productId: new ObjectId(productId),
+//       supplierId: new ObjectId(supplierId),
+//       supplierPrice,
+//       shopPrice,
+//       quantity,
+//       totalCost,
+//       staffUsername,
+//       addedAt: new Date(),
+//     };
+
+//     await db.collection('deliveries').insertOne(newDelivery);
+//     res.status(201).json({ message: "Delivery added successfully." });
+//   } catch (err) {
+//     console.error("Error adding delivery:", err);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+app.post('/api/add-delivery', async (req, res) => {
+  try {
+    const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
+
+    if (!productId || !supplierId || !supplierPrice || !shopPrice || !quantity) {
+      return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    const product = await db.collection('products').findOne({ _id: new ObjectId(productId) });
+    const supplier = await db.collection('suppliers').findOne({ _id: new ObjectId(supplierId) });
+
+    if (!product || !supplier) {
+      return res.status(404).json({ message: "Product or Supplier not found." });
+    }
+
+    const randomProductID = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8-char ID like 'A1B2C3D4'
+
+    // Explicitly set staffUsername to null if it's not provided or is an empty string
+    const validStaffUsername = staffUsername && staffUsername.trim() ? staffUsername : null;
+
+    const newDelivery = {
+      productID: randomProductID,
+      product: {
+        productName: product.productName,
+        category: product.category,
+        subCategory: product.subCategory,
+        brand: product.brand,
+        gender: product.gender || null,
+        size: product.size || null,
+        color: product.color,
+        imageUrl: product.imageUrl,
+      },
+      supplier: {
+        name: supplier.name,
+        contactPerson: supplier.contactPerson,
+        email: supplier.email,
+        region: supplier.region,
+        houseStreet: supplier.houseStreet,
+        phone: supplier.phone,
+      },
+      supplierPrice,
+      shopPrice,
+      quantity,
+      totalCost,
+      staffUsername: validStaffUsername,
+      addedAt: new Date(),
+    };
+
+  await db.collection('deliveries').insertOne(newDelivery);
+  res.status(201).json({ message: "Delivery added successfully." });
+} catch (err) {
+  console.error("Error adding delivery:", err);
+  res.status(500).json({ message: "Internal server error." });
+}
+});
+
+// Fetch deliveries with product and supplier data
+// app.get('/api/deliveries', async (req, res) => {
+//   try {
+//     const deliveries = await db.collection('deliveries').aggregate([
+//       {
+//         $lookup: {
+//           from: 'products',
+//           localField: 'productId',
+//           foreignField: '_id',
+//           as: 'product'
+//         }
+//       },
+//       {
+//         $lookup: {
+//           from: 'suppliers',
+//           localField: 'supplierId',
+//           foreignField: '_id',
+//           as: 'supplier'
+//         }
+//       },
+//       {
+//         $unwind: '$product'
+//       },
+//       {
+//         $unwind: '$supplier'
+//       },
+//       {
+//         $sort: { addedAt: -1 }
+//       }
+//     ]).toArray();
+
+//     res.status(200).json(deliveries);
+//   } catch (err) {
+//     console.error('Error fetching deliveries:', err);
+//     res.status(500).json({ message: 'Internal server error' });
+//   }
+// });
+app.get('/api/deliveries', async (req, res) => {
+  try {
+    const deliveries = await db.collection('deliveries')
+      .find({})
+      .sort({ addedAt: -1 })
+      .toArray();
+
+    res.status(200).json(deliveries);
+  } catch (err) {
+    console.error('Error fetching deliveries:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ADD STOCKS
+// app.post('/api/set-as-delivered/:id', async (req, res) => {
+//   try {
+//     const deliveryId = req.params.id;
+
+//     // Find the delivery by ID
+//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+
+//     if (!delivery) {
+//       return res.status(404).json({ message: "Delivery not found" });
+//     }
+
+//     // Insert into "stocks" collection
+//     await db.collection('stocks').insertOne({
+//       productID: delivery.productID,
+//       product: delivery.product,
+//       supplier: delivery.supplier,
+//       supplierPrice: delivery.supplierPrice,
+//       shopPrice: delivery.shopPrice,
+//       quantity: delivery.quantity,
+//       totalCost: delivery.totalCost,
+//       staffUsername: delivery.staffUsername,
+//       addedAt: new Date(),
+//     });
+
+//     // Remove from "deliveries"
+//     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+
+//     res.status(200).json({ message: "Set as delivered and moved to stock" });
+//   } catch (err) {
+//     console.error("Error setting as delivered:", err);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+
+// ADD STOCKS + DELIVERY HISTORY
+app.post('/api/set-as-delivered/:id', async (req, res) => {
+  try {
+    const deliveryId = req.params.id;
+
+    // Find the delivery by ID
+    const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+
+    if (!delivery) {
+      return res.status(404).json({ message: "Delivery not found" });
+    }
+
+    const deliveryRecord = {
+      productID: delivery.productID,
+      product: delivery.product,
+      supplier: delivery.supplier,
+      supplierPrice: delivery.supplierPrice,
+      shopPrice: delivery.shopPrice,
+      quantity: delivery.quantity,
+      totalCost: delivery.totalCost,
+      staffUsername: delivery.staffUsername,
+      deliveredAt: new Date(), // Changed to deliveredAt to distinguish it from addedAt
+    };
+
+    // Insert into "stocks" collection
+    await db.collection('stocks').insertOne(deliveryRecord);
+
+    // Insert into "delivery_history" collection
+    await db.collection('delivery_history').insertOne(deliveryRecord);
+
+    // Remove from "deliveries" collection
+    await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+
+    res.status(200).json({ message: "Set as delivered, moved to stock, and saved to history." });
+  } catch (err) {
+    console.error("Error setting as delivered:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Updated set-as-delivered endpoint to handle productID check
+app.post('/api/set-as-delivered/:id', async (req, res) => {
+  try {
+    const deliveryId = req.params.id;
+
+    // Find the delivery by ID
+    const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+
+    if (!delivery) {
+      return res.status(404).json({ message: "Delivery not found" });
+    }
+
+    const existingStock = await db.collection('stocks').findOne({ productID: delivery.productID });
+
+    if (existingStock) {
+      // Update existing stock entry
+      await db.collection('stocks').updateOne(
+        { productID: delivery.productID },
+        {
+          $set: {
+            supplier: delivery.supplier,
+            supplierPrice: delivery.supplierPrice,
+            shopPrice: delivery.shopPrice,
+            totalCost: delivery.totalCost,
+          },
+          $inc: { quantity: delivery.quantity }, // Increment the quantity
+        }
+      );
+      res.status(200).json({ message: "Stock updated successfully" });
+    } else {
+      // Insert new stock entry
+      await db.collection('stocks').insertOne({
+        productID: delivery.productID,
+        product: delivery.product,
+        supplier: delivery.supplier,
+        supplierPrice: delivery.supplierPrice,
+        shopPrice: delivery.shopPrice,
+        quantity: delivery.quantity,
+        totalCost: delivery.totalCost,
+        staffUsername: delivery.staffUsername,
+        addedAt: new Date(),
+      });
+      res.status(200).json({ message: "Set as delivered and moved to stock" });
+    }
+
+    // Remove from deliveries collection
+    await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+
+  } catch (err) {
+    console.error("Error setting as delivered:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+// Delivered history
+app.get('/api/delivery-history', async (req, res) => {
+  try {
+    const deliveredHistory = await db.collection('delivery_history')
+      .find({})
+      .sort({ addedAt: -1 })
+      .toArray();
+
+    res.status(200).json(deliveredHistory);
+  } catch (err) {
+    console.error('Failed to fetch delivery history:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Fetch all stocks
+app.get('/api/stocks', async (req, res) => {
+  try {
+    const stocks = await db.collection('stocks').find().sort({ addedAt: -1 }).toArray();
+    res.status(200).json(stocks);
+  } catch (err) {
+    console.error("Error fetching stocks:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Update stock by ID
+app.put('/api/update-stock/:id', async (req, res) => {
+  const { id } = req.params;
+  const { product, quantity, shopPrice } = req.body;
+
+  try {
+    const result = await db.collection('stocks').updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          product,
+          quantity,
+          shopPrice,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: "Stock not found or already up to date" });
+    }
+
+    res.status(200).json({ message: "Stock updated successfully" });
+  } catch (error) {
+    console.error("Error updating stock:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Delete a stock product by ID
+app.delete('/api/delete-stock/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.collection('stocks').deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    res.status(200).json({ message: "Product deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting product:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Restocks to deliver
+app.post('/api/restocks', async (req, res) => {
+  try {
+    const { stockId, supplierId, supplierPrice, shopPrice, quantity } = req.body;
+
+    if (!stockId || !supplierId || !supplierPrice || !shopPrice || !quantity) {
+      return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    // Find stock details
+    const stock = await db.collection('stocks').findOne({ _id: new ObjectId(stockId) });
+    const supplier = await db.collection('suppliers').findOne({ _id: new ObjectId(supplierId) });
+
+    if (!stock || !supplier) {
+      return res.status(404).json({ message: "Stock or Supplier not found." });
+    }
+
+    const newDelivery = {
+      productID: stock.productID,
+      product: stock.product,
+      supplier: supplier,
+      supplierPrice,
+      shopPrice,
+      quantity,
+      totalCost: supplierPrice * quantity,
+      addedAt: new Date(),
+    };
+
+    // Insert into deliveries
+    await db.collection('deliveries').insertOne(newDelivery);
+
+    res.status(201).json({ message: "Restock added to deliveries." });
+  } catch (err) {
+    console.error('Error restocking product:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
