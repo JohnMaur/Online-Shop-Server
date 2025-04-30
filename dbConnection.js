@@ -50,6 +50,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 // -------------------------------------- USERS ----------------------------------------
+// --------------------------USER ACCOUNT--------------------------
 // API to create a user account
 app.post('/api/signup', async (req, res) => {
   try {
@@ -145,6 +146,26 @@ app.post("/api/userChange-password", async (req, res) => {
   }
 });
 
+// --------------------------END OF USER ACCOUNT--------------------------
+
+// ---------------------USER INFO--------------------------------
+// Users account info
+app.get('/api/account-info/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const userInfo = await db.collection('account_info').findOne({ username });
+
+    if (!userInfo) {
+      return res.status(404).json({ message: "User account info not found." });
+    }
+
+    res.status(200).json(userInfo);
+  } catch (err) {
+    console.error('Error fetching account info:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.post('/api/update-account', async (req, res) => {
   try {
     const { username, region, houseStreet, recipientName, phoneNumber } = req.body;
@@ -170,34 +191,6 @@ app.post('/api/update-account', async (req, res) => {
   } catch (err) {
     console.error('Error updating account info:', err);
     return res.status(500).json({ message: 'Internal server error.' });
-  }
-});
-
-// API to get total users count
-app.get('/api/total-users', async (req, res) => {
-  try {
-    const totalUsers = await db.collection('users').countDocuments(); // Count total users
-    res.status(200).json({ totalUsers });
-  } catch (err) {
-    console.error('Error fetching user count:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Users account info
-app.get('/api/account-info/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-    const userInfo = await db.collection('account_info').findOne({ username });
-
-    if (!userInfo) {
-      return res.status(404).json({ message: "User account info not found." });
-    }
-
-    res.status(200).json(userInfo);
-  } catch (err) {
-    console.error('Error fetching account info:', err);
-    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -243,93 +236,50 @@ app.post('/api/update-profile-picture', async (req, res) => {
   }
 });
 
-// API to add a product to the user's cart
-// app.post('/api/add-to-cart', async (req, res) => {
-//   try {
-//     const { username, staffUsername, productId, productName, price, imageUrl } = req.body;
+// API to get total users count
+app.get('/api/total-users', async (req, res) => {
+  try {
+    const totalUsers = await db.collection('users').countDocuments(); // Count total users
+    res.status(200).json({ totalUsers });
+  } catch (err) {
+    console.error('Error fetching user count:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
-//     if (!username || !productId) {
-//       return res.status(400).json({ message: 'Username and Product ID are required.' });
-//     }
+// ---------------------END OF USER INFO--------------------------------
 
-//     const userCart = db.collection('userCart');
+// ---------------------USER CART------------------------
+// API to fetch user's cart products
+// With available quantity from stocks
+app.get('/api/user-cart/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
 
-//     // Check if the product is already in the cart
-//     const existingItem = await userCart.findOne({ username, productId });
+    if (!username) {
+      return res.status(400).json({ message: 'Username is required.' });
+    }
 
-//     if (existingItem) {
-//       // If product already in cart, update the quantity
-//       await userCart.updateOne(
-//         { username, productId },
-//         { $inc: { quantity: 1 } }
-//       );
-//     } else {
-//       // If product is not in cart, insert a new item
-//       const cartItem = {
-//         username,
-//         staffUsername,
-//         productId,
-//         productName,
-//         price,
-//         imageUrl,
-//         quantity: 1,
-//         addedAt: new Date(),
-//       };
-//       await userCart.insertOne(cartItem);
-//     }
+    const userCart = db.collection('userCart');
+    const stocks = db.collection('stocks');
 
-//     res.status(200).json({ message: 'Product added to cart successfully.' });
-//   } catch (err) {
-//     console.error('Error adding to cart:', err);
-//     res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
-// // API to add a product to the user's cart
-// app.post('/api/add-to-cart', async (req, res) => {
-//   try {
-//     const { username, staffUsername, price, productID, product } = req.body;
+    const cartItems = await userCart.find({ username }).toArray();
 
-//     if (!username || !product || !product.productName) {
-//       return res.status(400).json({ message: 'Username and product details are required.' });
-//     }
+    const updatedCartItems = await Promise.all(cartItems.map(async item => {
+      const stock = await stocks.findOne({ productID: item.productID });
+      return {
+        ...item,
+        availableQuantity: stock?.quantity ?? 0
+      };
+    }));
 
-//     const userCart = db.collection('userCart');
+    res.status(200).json(updatedCartItems);
+  } catch (err) {
+    console.error('Error fetching cart items:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
-//     // Check if the product already exists in the cart based on key fields
-//     const existingItem = await userCart.findOne({
-//       username,
-//       'product.productName': product.productName,
-//       'product.color': product.color,
-//       'product.size': product.size || null,
-//       price: price,
-//     });
-
-//     if (existingItem) {
-//       // If product already in cart, update the quantity
-//       await userCart.updateOne(
-//         { _id: existingItem._id },
-//         { $inc: { quantity: 1 } }
-//       );
-//     } else {
-//       // Insert new product with full object
-//       const cartItem = {
-//         username,
-//         staffUsername,
-//         productID,
-//         price,
-//         product,
-//         quantity: 1,
-//         addedAt: new Date(),
-//       };
-//       await userCart.insertOne(cartItem);
-//     }
-
-//     res.status(200).json({ message: 'Product added to cart successfully.' });
-//   } catch (err) {
-//     console.error('Error adding to cart:', err);
-//     res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
 // API to add a product to user's cart with Audit trail logs
 app.post('/api/add-to-cart', async (req, res) => {
   try {
@@ -389,85 +339,7 @@ app.post('/api/add-to-cart', async (req, res) => {
   }
 });
 
-// API to fetch user's cart products
-// app.get('/api/user-cart/:username', async (req, res) => {
-//   try {
-//     const { username } = req.params;
-
-//     if (!username) {
-//       return res.status(400).json({ message: 'Username is required.' });
-//     }
-
-//     const userCart = db.collection('userCart');
-//     const cartItems = await userCart.find({ username }).toArray();
-
-//     res.status(200).json(cartItems);
-//   } catch (err) {
-//     console.error('Error fetching cart items:', err);
-//     res.status(500).json({ message: 'Internal server error' });
-//   }
-// });
-// With available quantity from stocks
-app.get('/api/user-cart/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-
-    if (!username) {
-      return res.status(400).json({ message: 'Username is required.' });
-    }
-
-    const userCart = db.collection('userCart');
-    const stocks = db.collection('stocks');
-
-    const cartItems = await userCart.find({ username }).toArray();
-
-    const updatedCartItems = await Promise.all(cartItems.map(async item => {
-      const stock = await stocks.findOne({ productID: item.productID });
-      return {
-        ...item,
-        availableQuantity: stock?.quantity ?? 0
-      };
-    }));
-
-    res.status(200).json(updatedCartItems);
-  } catch (err) {
-    console.error('Error fetching cart items:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-
-// API to update product quantity in the cart
-// app.put('/api/update-cart/:id', async (req, res) => {
-//   try {
-//     const { username, quantity } = req.body;
-//     const productId = req.params.id;
-//     console.log("Received request to update cart:", req.body);
-
-//     if (!username || !productId || quantity < 1) {
-//       return res.status(400).json({ message: 'Invalid request data.' });
-//     }
-
-//     const userCart = db.collection('userCart');
-
-//     // Use productId as a string (DO NOT convert to ObjectId)
-//     const result = await userCart.updateOne(
-//       { username, _id: new ObjectId(productId) }, // Match productId as a string
-//       { $set: { quantity } }
-//     );
-
-//     if (result.modifiedCount === 0) {
-//       return res.status(404).json({ message: 'Product not found in cart.' });
-//     }
-
-//     res.status(200).json({ message: 'Cart updated successfully.' });
-//   } catch (error) {
-//     console.error('Error updating cart:', error);
-//     res.status(500).json({ message: 'Internal server error.' });
-//   }
-// });
 // API to update product quantity in the cart with Audit Trail Logs
-// API to update product quantity in the cart
 app.put('/api/update-cart/:id', async (req, res) => {
   try {
     const { username, quantity } = req.body;
@@ -521,33 +393,6 @@ app.put('/api/update-cart/:id', async (req, res) => {
   }
 });
 
-// API to delete a product from the cart
-// app.delete('/api/delete-cart/:id', async (req, res) => {
-//   try {
-//     const { username } = req.body;
-//     const productId = req.params.id;
-
-//     if (!username || !productId) {
-//       return res.status(400).json({ message: 'Username and Product ID are required.' });
-//     }
-
-//     const userCart = db.collection('userCart');
-
-//     const result = await userCart.deleteOne({
-//       username,
-//       _id: new ObjectId(productId),
-//     });
-
-//     if (result.deletedCount === 0) {
-//       return res.status(404).json({ message: 'Product not found in cart.' });
-//     }
-
-//     res.status(200).json({ message: 'Product removed from cart successfully.' });
-//   } catch (error) {
-//     console.error('Error deleting cart item:', error);
-//     res.status(500).json({ message: 'Internal server error' });
-//   }
-// });
 // API to delete a product from the cart with Audit Trail Logs
 app.delete('/api/delete-cart/:id', async (req, res) => {
   try {
@@ -599,105 +444,10 @@ app.delete('/api/delete-cart/:id', async (req, res) => {
   }
 });
 
+// --------------------END OF USER CART------------------------
+
+// --------------USER ORDER PROCESS-------------------------
 // API to place an order
-// app.post('/api/place-order', async (req, res) => {
-//   try {
-//     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
-
-//     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
-//       return res.status(400).json({ message: 'Invalid order request.' });
-//     }
-
-//     // Get user collection references
-//     const userCart = db.collection('userCart');
-//     const userShippingCollection = db.collection('userShipping');
-//     const productCollection = db.collection('products');
-
-//     // Process each selected item
-//     for (const item of selectedItems) {
-//       const { _id, quantity, productId } = item;
-
-//       // Move item to userShipping
-//       await userShippingCollection.insertOne({
-//         username,
-//         staffUsername: item.staffUsername,
-//         productId: item.productId,
-//         productName: item.productName,
-//         price: totalPrice,
-//         quantity: item.quantity,
-//         paymentMethod, // Store payment method in database
-//         shippingDate: shippingOptions[item._id] || 'Standard',
-//         imageUrl: item.imageUrl,
-//         orderedAt: new Date(),
-//       });
-
-//       // Remove ordered items from cart
-//       await userCart.deleteMany({
-//         username,
-//         _id: { $in: selectedItems.map(item => (item._id)) }
-//       });
-
-//       // Update product quantity in the database (-1 quantity)
-//       await productCollection.updateOne(
-//         { _id: new ObjectId(productId) },
-//         { $inc: { quantity: -quantity } }
-//       );
-//     }
-
-//     res.status(200).json({ message: "Order placed successfully!" });
-//   } catch (error) {
-//     console.error("Error placing order:", error);
-//     res.status(500).json({ error: "Failed to place order." });
-//   }
-// });
-// app.post('/api/place-order', async (req, res) => {
-//   try {
-//     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
-
-//     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
-//       return res.status(400).json({ message: 'Invalid order request.' });
-//     }
-
-//     const userCart = db.collection('userCart');
-//     const userShippingCollection = db.collection('userShipping');
-//     const stocksCollection = db.collection('stocks');
-
-//     for (const item of selectedItems) {
-//       const { _id, quantity, productID } = item;
-
-//       // Move item to userShipping
-//       await userShippingCollection.insertOne({
-//         username,
-//         staffUsername: item.staffUsername,
-//         productID: item.productID,
-//         productName: item.product.productName,
-//         price: totalPrice,
-//         quantity: item.quantity,
-//         paymentMethod,
-//         shippingDate: shippingOptions[item._id] || 'Standard',
-//         imageUrl: item.product.imageUrl,
-//         orderedAt: new Date(),
-//       });
-
-//       // Update product quantity in stocks using custom productID
-//       await stocksCollection.updateOne(
-//         { productID: productID },
-//         { $inc: { quantity: -quantity } }
-//       );
-//     }
-
-//     // Remove all items from cart after processing
-//     await userCart.deleteMany({
-//       username,
-//       _id: { $in: selectedItems.map(item => item._id) }
-//     });
-
-//     res.status(200).json({ message: 'Order placed successfully.' });
-//   } catch (error) {
-//     console.error("Error placing order:", error);
-//     res.status(500).json({ message: 'Failed to place order.' });
-//   }
-// });
 app.post('/api/place-order', async (req, res) => {
   try {
     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
@@ -762,41 +512,7 @@ app.post('/api/place-order', async (req, res) => {
   }
 });
 
-app.get('/api/stock/:id', async (req, res) => {
-  try {
-    const stocksCollection = db.collection('stocks');
-    const product = await stocksCollection.findOne({ productID: req.params.id });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-
-    res.json({ quantity: product.quantity });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-
 // API to fetch users' orders
-// app.get('/api/user-orders/:username', async (req, res) => {
-//   try {
-//     const { username } = req.params;
-
-//     if (!username) {
-//       return res.status(400).json({ message: "Username is required." });
-//     }
-
-//     const userOrders = db.collection('userShipping'); // Collection where orders are stored
-//     const orders = await userOrders.find({ username }).toArray();
-
-//     if (orders.length === 0) {
-//       return res.status(404).json({ message: "No orders found for this user." });
-//     }
-
-//     res.status(200).json(orders);
-//   } catch (error) {
-//     console.error("Error fetching user orders:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
 // Needs revision
 app.get('/api/user-orders/:username', async (req, res) => {
   try {
@@ -874,90 +590,51 @@ app.get('/api/user-orders/:username', async (req, res) => {
   }
 });
 
-// Cancel order 
-// app.delete('/api/user-orders/:orderId', async (req, res) => {
-//   try {
-//     const { orderId } = req.params;
+// Fetch to receive orders
+// New endpoint for fetching 'toReceive' orders
+app.get('/api/to-receive/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    if (!username) {
+      return res.status(400).json({ message: "Username is required." });
+    }
 
-//     if (!orderId) {
-//       return res.status(400).json({ message: "Order ID is required." });
-//     }
+    const toReceive = db.collection('toReceive');
+    const orders = await toReceive.find({ username }).toArray();
 
-//     const userShippingCollection = db.collection('userShipping');
-//     const stocksCollection = db.collection('stocks');
+    if (orders.length === 0) {
+      return res.status(404).json({ message: "No orders to receive for this user." });
+    }
 
-//     // Step 1: Find the order before deleting
-//     const order = await userShippingCollection.findOne({ _id: new ObjectId(orderId) });
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error("Error fetching to-receive orders:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found." });
-//     }
+// Fetch all orders base on user
+// Fetch received orders by username
+app.get('/api/order-received/:username', async (req, res) => {
+  const { username } = req.params;
 
-//     // Step 2: Increment the quantity back in stocks
-//     await stocksCollection.updateOne(
-//       { productID: order.productID },
-//       { $inc: { quantity: order.quantity } }
-//     );
+  try {
+    const orders = await db
+      .collection('orderReceived')
+      .find({ username })
+      .toArray();
 
-//     // Step 3: Delete the order from userShipping
-//     const result = await userShippingCollection.deleteOne({ _id: new ObjectId(orderId) });
+    if (orders.length === 0) {
+      return res.status(404).json({ message: "No received orders found for this user." });
+    }
 
-//     if (result.deletedCount === 0) {
-//       return res.status(404).json({ message: "Failed to delete the order." });
-//     }
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error("Error fetching received orders by username:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
-//     res.status(200).json({ message: "Order cancelled and stock restored successfully." });
-//   } catch (error) {
-//     console.error("Error cancelling order:", error);
-//     res.status(500).json({ message: "Failed to cancel order." });
-//   }
-// });
-// app.post('/api/user-cancel-order/:orderId', async (req, res) => {
-//   try {
-//     const { orderId } = req.params;
-//     const { canceledReason } = req.body;
-
-//     if (!orderId || !canceledReason) {
-//       return res.status(400).json({ message: "Order ID and reason are required." });
-//     }
-
-//     const userShippingCollection = db.collection('userShipping');
-//     const stocksCollection = db.collection('stocks');
-//     const canceledOrders = db.collection('canceledOrders');
-
-//     // Find the order
-//     const order = await userShippingCollection.findOne({ _id: new ObjectId(orderId) });
-
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found." });
-//     }
-
-//     // Restore stock
-//     await stocksCollection.updateOne(
-//       { productID: order.productID },
-//       { $inc: { quantity: order.quantity } }
-//     );
-
-//     // Add canceled details
-//     order.canceledReason = canceledReason;
-//     order.canceledDate = new Date().toISOString().split('T')[0];
-
-//     // Insert to canceledOrders
-//     await canceledOrders.insertOne(order);
-
-//     // Remove from userShipping
-//     const result = await userShippingCollection.deleteOne({ _id: new ObjectId(orderId) });
-
-//     if (result.deletedCount === 0) {
-//       return res.status(500).json({ message: "Failed to delete the order." });
-//     }
-
-//     res.status(200).json({ message: "Order cancelled and stock restored successfully." });
-//   } catch (error) {
-//     console.error("Error cancelling order:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
 // Cancel shipping order with Audit Trail Logs
 app.post('/api/user-cancel-order/:orderId', async (req, res) => {
   try {
@@ -1023,87 +700,37 @@ app.post('/api/user-cancel-order/:orderId', async (req, res) => {
   }
 });
 
-// Fetch to receive orders
-// New endpoint for fetching 'toReceive' orders
-app.get('/api/to-receive/:username', async (req, res) => {
+// --------------END OF USER ORDER PROCESS-------------------------
+
+app.get('/api/stock/:id', async (req, res) => {
   try {
-    const { username } = req.params;
-    if (!username) {
-      return res.status(400).json({ message: "Username is required." });
+    const stocksCollection = db.collection('stocks');
+    const product = await stocksCollection.findOne({ productID: req.params.id });
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    res.json({ quantity: product.quantity });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Fetch all received orders
+app.get('/api/all-order-received', async (req, res) => {
+  try {
+    const orderReceived = await db.collection('orderReceived').find().toArray();
+
+    if (orderReceived.length === 0) {
+      return res.status(404).json({ message: "No received orders found." });
     }
 
-    const toReceive = db.collection('toReceive');
-    const orders = await toReceive.find({ username }).toArray();
-
-    if (orders.length === 0) {
-      return res.status(404).json({ message: "No orders to receive for this user." });
-    }
-
-    res.status(200).json(orders);
+    res.status(200).json(orderReceived);
   } catch (error) {
-    console.error("Error fetching to-receive orders:", error);
+    console.error("Error fetching received orders:", error);
     res.status(500).json({ message: "Internal server error." });
   }
 });
 
 // Fetch and insert to Order Received
-// Mark order as received
-// app.post('/api/mark-received/:orderId', async (req, res) => {
-//   const { orderId } = req.params;
-
-//   if (!ObjectId.isValid(orderId)) {
-//     return res.status(400).json({ message: "Invalid order ID." });
-//   }
-
-//   try {
-//     const toReceiveCollection = db.collection('toReceive');
-//     const orderReceivedCollection = db.collection('orderReceived');
-
-//     // Find the order in toReceive
-//     const order = await toReceiveCollection.findOne({ _id: new ObjectId(orderId) });
-
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found in toReceive." });
-//     }
-
-//     // Insert to orderReceived
-//     await orderReceivedCollection.insertOne(order);
-
-//     // Delete from toReceive
-//     await toReceiveCollection.deleteOne({ _id: new ObjectId(orderId) });
-
-//     res.status(200).json({ message: "Order marked as received." });
-//   } catch (error) {
-//     console.error("Error moving order to orderReceived:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
-// app.post('/api/mark-received/:orderId', async (req, res) => {
-//   try {
-//     const { orderId } = req.params;
-//     const { orderReceivedDate } = req.body;
-
-//     const toReceive = db.collection('toReceive');
-//     const orderReceived = db.collection('orderReceived');
-
-//     const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
-
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found in toReceive." });
-//     }
-
-//     // Attach orderReceivedDate to order
-//     order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
-
-//     await orderReceived.insertOne(order);
-//     await toReceive.deleteOne({ _id: new ObjectId(orderId) });
-
-//     res.status(200).json({ message: "Order marked as received." });
-//   } catch (error) {
-//     console.error("Error marking order as received:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
 // Marking order as received with Audit Trail Logs
 app.post('/api/mark-received/:orderId', async (req, res) => {
   try {
@@ -1154,101 +781,6 @@ app.post('/api/mark-received/:orderId', async (req, res) => {
   }
 });
 
-// Fetch all received order
-// Fetch all received orders
-app.get('/api/all-order-received', async (req, res) => {
-  try {
-    const orderReceived = await db.collection('orderReceived').find().toArray();
-
-    if (orderReceived.length === 0) {
-      return res.status(404).json({ message: "No received orders found." });
-    }
-
-    res.status(200).json(orderReceived);
-  } catch (error) {
-    console.error("Error fetching received orders:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-
-// Fetch all orders base on user
-// Fetch received orders by username
-app.get('/api/order-received/:username', async (req, res) => {
-  const { username } = req.params;
-
-  try {
-    const orders = await db
-      .collection('orderReceived')
-      .find({ username })
-      .toArray();
-
-    if (orders.length === 0) {
-      return res.status(404).json({ message: "No received orders found for this user." });
-    }
-
-    res.status(200).json(orders);
-  } catch (error) {
-    console.error("Error fetching received orders by username:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-// Cancel order 
-// app.post('/api/cancel-order/:orderId', async (req, res) => {
-//   try {
-//     const { orderId } = req.params;
-//     const { canceledReason } = req.body;
-
-//     console.log("Canceling order with ID:", orderId);  // Add a log to check if this is hit
-
-//     const orderReceived = db.collection('toReceive');
-//     const canceledOrders = db.collection('canceledOrders');
-
-//     const order = await orderReceived.findOne({ _id: new ObjectId(orderId) });
-
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found in orderReceived." });
-//     }
-
-//     order.canceledReason = canceledReason;
-
-//     await canceledOrders.insertOne(order);
-//     await orderReceived.deleteOne({ _id: new ObjectId(orderId) });
-
-//     res.status(200).json({ message: "Order canceled successfully." });
-//   } catch (error) {
-//     console.error("Error canceling order:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
-// app.post('/api/cancel-order/:orderId', async (req, res) => {
-//   try {
-//     const { orderId } = req.params;
-//     const { canceledReason } = req.body;
-
-//     const orderReceived = db.collection('toReceive');
-//     const canceledOrders = db.collection('canceledOrders');
-
-//     const order = await orderReceived.findOne({ _id: new ObjectId(orderId) });
-
-//     if (!order) {
-//       return res.status(404).json({ message: "Order not found in orderReceived." });
-//     }
-
-//     // Add canceledReason and canceledDate
-//     order.canceledReason = canceledReason;
-//     order.canceledDate = new Date().toISOString().split('T')[0];
-
-//     await canceledOrders.insertOne(order);
-//     await orderReceived.deleteOne({ _id: new ObjectId(orderId) });
-
-//     res.status(200).json({ message: "Order canceled successfully." });
-//   } catch (error) {
-//     console.error("Error canceling order:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
 // Cancel Order with Audit trail logs
 app.post('/api/cancel-order/:orderId', async (req, res) => {
   try {
@@ -1301,7 +833,6 @@ app.post('/api/cancel-order/:orderId', async (req, res) => {
 });
 
 // Fetch all canceled orders
-// Fetch all canceled orders
 app.get('/api/all-canceled-orders', async (req, res) => {
   try {
     const canceledOrders = await db.collection('canceledOrders').find().toArray();
@@ -1339,8 +870,223 @@ app.get('/api/canceled-orders/:username', async (req, res) => {
   }
 });
 
+// --------------------USER REVIEW-------------------
+// app.post('/api/submit-review', async (req, res) => {
+//   const { orderId, username, productName, rating, review } = req.body;
+
+//   if (!orderId || !username || !productName || !rating || !review) {
+//     return res.status(400).json({ message: "Missing fields." });
+//   }
+
+//   try {
+//     const newReview = {
+//       orderId,
+//       username,
+//       productName,
+//       rating,
+//       review,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('userReview').insertOne(newReview);
+//     res.status(201).json({ message: "Review submitted successfully!" });
+//   } catch (error) {
+//     console.error("Error inserting review:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+// app.post('/api/submit-review', async (req, res) => {
+//   const { orderId, productID, username, productName, rating, review, accountInfo } = req.body;
+
+//   if (!orderId || !productID || !username || !productName || !rating || !review || !accountInfo) {
+//     return res.status(400).json({ message: "Missing fields." });
+//   }
+
+//   try {
+//     const newReview = {
+//       orderId,
+//       productID,
+//       username,
+//       productName,
+//       rating,
+//       review,
+//       accountInfo, // Include detailed account info
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('userReview').insertOne(newReview);
+//     res.status(201).json({ message: "Review submitted successfully!" });
+//   } catch (error) {
+//     console.error("Error inserting review:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+// With photo
+app.post('/api/submit-review', async (req, res) => {
+  const { orderId, productID, username, productName, rating, review, accountInfo, reviewImageUrl } = req.body; // <-- added reviewImageUrl
+
+  if (!orderId || !productID || !username || !productName || !rating || !review || !accountInfo) {
+    return res.status(400).json({ message: "Missing fields." });
+  }
+
+  try {
+    const newReview = {
+      orderId,
+      productID,
+      username,
+      productName,
+      rating,
+      review,
+      accountInfo,
+      reviewImageUrl: reviewImageUrl || null,  // <-- Save image URL if exists
+      createdAt: new Date(),
+    };
+
+    await db.collection('userReview').insertOne(newReview);
+    res.status(201).json({ message: "Review submitted successfully!" });
+  } catch (error) {
+    console.error("Error inserting review:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// app.put('/api/update-review', async (req, res) => {
+//   const { orderId, productID, username, productName, rating, review, accountInfo } = req.body;
+
+//   if (!orderId || !productID || !username || !productName || !rating || !review || !accountInfo) {
+//     return res.status(400).json({ message: "Missing fields." });
+//   }
+
+//   try {
+//     const updatedReview = {
+//       rating,
+//       review,
+//       updatedAt: new Date(),
+//     };
+
+//     await db.collection('userReview').updateOne(
+//       { orderId, username },
+//       { $set: updatedReview }
+//     );
+
+//     res.status(200).json({ message: "Review updated successfully!" });
+//   } catch (error) {
+//     console.error("Error updating review:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+
+// WIth photo
+
+app.put('/api/update-review', async (req, res) => {
+  const { orderId, productID, username, productName, rating, review, accountInfo, reviewImageUrl } = req.body; // <-- added reviewImageUrl
+
+  if (!orderId || !productID || !username || !productName || !rating || !review || !accountInfo) {
+    return res.status(400).json({ message: "Missing fields." });
+  }
+
+  try {
+    const updatedReview = {
+      rating,
+      review,
+      updatedAt: new Date(),
+      ...(reviewImageUrl && { reviewImageUrl }), // <-- only update image if it exists
+    };
+
+    await db.collection('userReview').updateOne(
+      { orderId, username },
+      { $set: updatedReview }
+    );
+
+    res.status(200).json({ message: "Review updated successfully!" });
+  } catch (error) {
+    console.error("Error updating review:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// app.get("/api/review/:orderId/:username", async (req, res) => {
+//   const { orderId, username } = req.params;
+
+//   try {
+//     const review = await db.collection("userReview").findOne({ orderId, username });
+    
+//     if (review) {
+//       res.status(200).json({ hasReviewed: true, review });
+//     } else {
+//       res.status(404).json({ hasReviewed: false });
+//     }
+//   } catch (error) {
+//     console.error("Error fetching review:", error);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+
+// app.get('/api/review/:orderId/:username', async (req, res) => {
+//   const { orderId, username } = req.params;
+
+//   try {
+//     const review = await db.collection('userReview').findOne({ orderId, username });
+
+//     if (review) {
+//       res.json({
+//         hasReviewed: true,
+//         review: {
+//           rating: review.rating,
+//           review: review.review,
+//         },
+//       });
+//     } else {
+//       res.json({ hasReviewed: false });
+//     }
+//   } catch (error) {
+//     console.error("Error fetching review:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+// With photo
+app.get('/api/review/:orderId/:username', async (req, res) => {
+  const { orderId, username } = req.params;
+
+  try {
+    const review = await db.collection('userReview').findOne({ orderId, username });
+
+    if (review) {
+      res.json({
+        hasReviewed: true,
+        review: {
+          rating: review.rating,
+          review: review.review,
+          reviewImageUrl: review.reviewImageUrl || null, // <-- Add this line
+        },
+      });
+    } else {
+      res.json({ hasReviewed: false });
+    }
+  } catch (error) {
+    console.error("Error fetching review:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// user homepage review
+// ✨ New API to fetch all reviews for a productID
+app.get('/api/reviews-by-product/:productID', async (req, res) => {
+  const { productID } = req.params;
+
+  try {
+    const reviews = await db.collection('userReview').find({ productID }).toArray();
+    res.json(reviews);
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+
 
 // --------------------------------- STAFF ------------------------------
+// ------------------STAFF ACCOUNT-----------------------
 // API to log in as Staff
 app.post('/api/staffLogin', async (req, res) => {
   try {
@@ -1440,6 +1186,9 @@ app.get('/api/total-staff', async (req, res) => {
   }
 });
 
+// ------------------END OF STAFF ACCOUNT-----------------------
+
+// -----------------STAFF ACCOUNT INFO----------------------
 // Fetch staff account info
 app.get('/api/staff-info/:username', async (req, res) => {
   try {
@@ -1536,6 +1285,8 @@ app.get('/api/get-staffprofile-picture/:username', async (req, res) => {
     res.status(500).json({ message: 'Internal server error.' });
   }
 });
+
+// -----------------END OF STAFF ACCOUNT INFO----------------------
 
 // --------------STAFF PRODUCT CATEGORY API------------------------
 // Product Maintenance Collection
@@ -1696,9 +1447,54 @@ app.delete('/api/product-maintenance/:id', async (req, res) => {
 
 // -------------STAFF PRODUCT API-------------------------------------
 // Add a new product with Audit Trail Logs
+// app.post('/api/add-product', async (req, res) => {
+//   try {
+//     const { staffUsername, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
+
+//     if (!productName || !category || !brand || !color || !imageUrl || !staffUsername) {
+//       return res.status(400).json({ message: 'Missing required fields or staff username.' });
+//     }
+
+//     const newProduct = {
+//       staffUsername,
+//       productName,
+//       category,
+//       subCategory: subCategory?.trim() || null,
+//       brand,
+//       gender: gender?.trim() || null,
+//       size: size?.trim() || null,
+//       color,
+//       imageUrl,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('products').insertOne(newProduct);
+
+//     // Fetch staff info
+//     const staffCollection = db.collection('staff');
+//     const staffInfo = await staffCollection.findOne({ username: staffUsername });
+
+//     // Insert audit trail log
+//     const auditLogs = db.collection('auditTrailLogs');
+//     await auditLogs.insertOne({
+//       username: staffUsername,
+//       role: "Staff",
+//       action: 'Staff Added New Product',
+//       affectedId: null,
+//       timestamp: new Date(),
+//       accountInfo: staffInfo || {},
+//     });
+
+//     return res.status(201).json({ message: 'Product added successfully.' });
+//   } catch (err) {
+//     console.error('Error adding product:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+// Add a new product with productID
 app.post('/api/add-product', async (req, res) => {
   try {
-    const { staffUsername, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
+    const { staffUsername, productID, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
 
     if (!productName || !category || !brand || !color || !imageUrl || !staffUsername) {
       return res.status(400).json({ message: 'Missing required fields or staff username.' });
@@ -1706,6 +1502,7 @@ app.post('/api/add-product', async (req, res) => {
 
     const newProduct = {
       staffUsername,
+      productID,
       productName,
       category,
       subCategory: subCategory?.trim() || null,
@@ -1718,19 +1515,6 @@ app.post('/api/add-product', async (req, res) => {
     };
 
     await db.collection('products').insertOne(newProduct);
-
-    // // Audit Trail Logging
-    // const staff = await db.collection('staff').findOne({ username: staffUsername });
-    // if (staff) {
-    //   await db.collection('auditTrailLogs').insertOne({
-    //     staffFullname: staff.staffFullname,
-    //     staffUsername,
-    //     role: "Staff",
-    //     action: 'Staff Added New Product',
-    //     affectedId: null,
-    //     timestamp: new Date()
-    //   });
-    // }
 
     // Fetch staff info
     const staffCollection = db.collection('staff');
@@ -2094,129 +1878,47 @@ app.post('/api/set-as-delivered/:id', async (req, res) => {
 
 // ----------==---END OF STAFF DELIVERY API------------------------------
 
-// // Fetch products with quantity less than 10
-// app.get('/api/products-low-stock', async (req, res) => {
+// -----------------SUPPLIER-------------------------
+// app.post('/api/add-supplier', async (req, res) => {
 //   try {
-//     const products = await db.collection('products').find({ quantity: { $lt: 10 } }).toArray();
-//     res.status(200).json(products);
+//     const { name, contactPerson, email, region, houseStreet, phone, staffUsername } = req.body;
+
+//     if (!name || !contactPerson || !email || !region || !houseStreet || !phone || !staffUsername) {
+//       return res.status(400).json({ message: "All fields including staffUsername are required." });
+//     }
+
+//     // Check if the supplier name already exists in the database
+//     const existingSupplier = await db.collection('suppliers').findOne({ name });
+//     if (existingSupplier) {
+//       return res.status(400).json({ message: "Supplier name must be unique." });
+//     }
+
+//     const newSupplier = {
+//       name,
+//       contactPerson,
+//       email,
+//       region,
+//       houseStreet,
+//       phone,
+//       staffUsername,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('suppliers').insertOne(newSupplier);
+//     return res.status(201).json({ message: "Supplier added successfully." });
 //   } catch (err) {
-//     console.error('Error fetching low-stock products:', err);
-//     res.status(500).json({ message: 'Internal server error' });
+//     console.error("Error adding supplier:", err);
+//     return res.status(500).json({ message: "Internal server error." });
 //   }
 // });
 
-// API to fetch user shipping details based on staffUsername
-// app.get('/api/staff-shipping/:staffUsername', async (req, res) => {
-//   try {
-//     const { staffUsername } = req.params;
-
-//     if (!staffUsername) {
-//       return res.status(400).json({ message: "Staff username is required." });
-//     }
-
-//     const userShipping = await db.collection('userShipping')
-//       .find({ staffUsername }) // Find all orders assigned to this staff
-//       .toArray();
-
-//     if (userShipping.length === 0) {
-//       return res.status(404).json({ message: "No shipping records found for this staff member." });
-//     }
-
-//     res.status(200).json(userShipping);
-//   } catch (error) {
-//     console.error("Error fetching staff shipping details:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
-// Fetch all userShipping records regardless of staffUsername
-app.get('/api/all-shipping', async (req, res) => {
-  try {
-    const userShipping = await db.collection('userShipping')
-      .find() // No staffUsername filter, so this gets all orders
-      .toArray();
-
-    if (userShipping.length === 0) {
-      return res.status(404).json({ message: "No shipping records found." });
-    }
-
-    res.status(200).json(userShipping);
-  } catch (error) {
-    console.error("Error fetching all shipping details:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-app.post('/api/move-to-receive', async (req, res) => {
-  try {
-    const { orderId } = req.body;
-    if (!orderId) return res.status(400).json({ message: "Order ID is required." });
-
-    const userShipping = db.collection('userShipping');
-    const toReceive = db.collection('toReceive');
-
-    // Find the order by ID
-    const order = await userShipping.findOne({ _id: new ObjectId(orderId) });
-    if (!order) return res.status(404).json({ message: "Order not found." });
-
-    // Insert into toReceive
-    await toReceive.insertOne(order);
-
-    // Remove from userShipping
-    await userShipping.deleteOne({ _id: new ObjectId(orderId) });
-
-    res.status(200).json({ message: "Order moved to toReceive successfully." });
-  } catch (error) {
-    console.error("Error moving order to toReceive:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-
-// Fetch all to receive orders
-app.get('/api/all-receiving', async (req, res) => {
-  try {
-    const toReceive = await db.collection('toReceive')
-      .find()
-      .toArray();
-
-    if (toReceive.length === 0) {
-      return res.status(404).json({ message: "No receiving records found." });
-    }
-
-    res.status(200).json(toReceive);
-  } catch (error) {
-    console.error("Error fetching receiving details:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-// app.get('/api/totalstaff-shipping/:staffUsername', async (req, res) => {
-//   try {
-//     const { staffUsername } = req.params;
-
-//     if (!staffUsername) {
-//       return res.status(400).json({ message: "Staff username is required." });
-//     }
-
-//     const totalShipped = await db.collection('userShipping')
-//       .countDocuments({ staffUsername });
-
-//     res.status(200).json({ totalShipped });
-//   } catch (error) {
-//     console.error("Error fetching staff shipping details:", error);
-//     res.status(500).json({ message: "Internal server error." });
-//   }
-// });
-
-// STAFF MAINTENANCE
-// Add a new supplier
-
+// ADDING Supplier with supplierID
 app.post('/api/add-supplier', async (req, res) => {
   try {
-    const { name, contactPerson, email, region, houseStreet, phone, staffUsername } = req.body;
+    const { name, contactPerson, email, region, houseStreet, phone, staffUsername, supplierID } = req.body;
 
-    if (!name || !contactPerson || !email || !region || !houseStreet || !phone || !staffUsername) {
-      return res.status(400).json({ message: "All fields including staffUsername are required." });
+    if (!name || !contactPerson || !email || !region || !houseStreet || !phone || !staffUsername || !supplierID) {
+      return res.status(400).json({ message: "All fields including supplierID are required." });
     }
 
     // Check if the supplier name already exists in the database
@@ -2226,6 +1928,7 @@ app.post('/api/add-supplier', async (req, res) => {
     }
 
     const newSupplier = {
+      supplierID, // 👈 Add supplierID into the document
       name,
       contactPerson,
       email,
@@ -2244,6 +1947,7 @@ app.post('/api/add-supplier', async (req, res) => {
   }
 });
 
+// NOT NEEDED ANYMORE
 app.post('/api/check-supplier-name', async (req, res) => {
   try {
     const { name } = req.body;
@@ -2265,24 +1969,35 @@ app.post('/api/check-supplier-name', async (req, res) => {
   }
 });
 
-// Fetching staff supplier
-app.get('/api/staffSuppliers', async (req, res) => {
+app.post('/api/check-supplier-field', async (req, res) => {
   try {
-    const { staffUsername } = req.query;
+    const { field, value } = req.body;
 
-    // Ensure staffUsername is provided before querying
-    if (!staffUsername) {
-      return res.status(400).json({ message: "staffUsername is required" });
+    if (!field || !value) {
+      return res.status(400).json({ message: "Field and value are required." });
     }
 
-    const suppliers = await db.collection('suppliers').find({ staffUsername }).toArray();
-    res.status(200).json(suppliers);
+    let query = {};
+    query[field] = value;
+
+    const existingSupplier = await db.collection('suppliers').findOne(query);
+
+    if (existingSupplier) {
+      let readableField = {
+        name: "Supplier name",
+        phone: "Phone number",
+        houseStreet: "Address",
+      }[field] || "Field";
+
+      return res.status(400).json({ message: `${readableField} already exists.` });
+    }
+
+    res.status(200).json({ message: `${field} is available.` });
   } catch (err) {
-    console.error('Error fetching suppliers:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Error checking supplier field:", err);
+    res.status(500).json({ message: "Internal server error." });
   }
 });
-
 
 app.put('/api/update-supplier/:id', async (req, res) => {
   try {
@@ -2337,6 +2052,26 @@ app.delete('/api/delete-supplier/:id', async (req, res) => {
   }
 });
 
+// Fetching staff supplier
+app.get('/api/staffSuppliers', async (req, res) => {
+  try {
+    const { staffUsername } = req.query;
+
+    // Ensure staffUsername is provided before querying
+    if (!staffUsername) {
+      return res.status(400).json({ message: "staffUsername is required" });
+    }
+
+    const suppliers = await db.collection('suppliers').find({ staffUsername }).toArray();
+    res.status(200).json(suppliers);
+  } catch (err) {
+    console.error('Error fetching suppliers:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// -----------------END OF SUPPLIER-------------------------
+
 // --------------------DASHBOARD-----------------------------------
 app.get('/api/total-user-shipping', async (req, res) => {
   try {
@@ -2374,8 +2109,67 @@ app.get('/api/total-stocks', async (req, res) => {
   }
 });
 
-
 // --------------------END OF DASHBOARD-----------------------------------
+// Fetch all userShipping records regardless of staffUsername
+app.get('/api/all-shipping', async (req, res) => {
+  try {
+    const userShipping = await db.collection('userShipping')
+      .find() // No staffUsername filter, so this gets all orders
+      .toArray();
+
+    if (userShipping.length === 0) {
+      return res.status(404).json({ message: "No shipping records found." });
+    }
+
+    res.status(200).json(userShipping);
+  } catch (error) {
+    console.error("Error fetching all shipping details:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+app.post('/api/move-to-receive', async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ message: "Order ID is required." });
+
+    const userShipping = db.collection('userShipping');
+    const toReceive = db.collection('toReceive');
+
+    // Find the order by ID
+    const order = await userShipping.findOne({ _id: new ObjectId(orderId) });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    // Insert into toReceive
+    await toReceive.insertOne(order);
+
+    // Remove from userShipping
+    await userShipping.deleteOne({ _id: new ObjectId(orderId) });
+
+    res.status(200).json({ message: "Order moved to toReceive successfully." });
+  } catch (error) {
+    console.error("Error moving order to toReceive:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// Fetch all to receive orders
+app.get('/api/all-receiving', async (req, res) => {
+  try {
+    const toReceive = await db.collection('toReceive')
+      .find()
+      .toArray();
+
+    if (toReceive.length === 0) {
+      return res.status(404).json({ message: "No receiving records found." });
+    }
+
+    res.status(200).json(toReceive);
+  } catch (error) {
+    console.error("Error fetching receiving details:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
 // ------------------------- ADMIN ----------------------------------------
 // API to log in to Admin
@@ -2410,22 +2204,92 @@ app.post('/api/admin', async (req, res) => {
 
 // --------------ADMIN PRODUCT CATEGORY API--------------------------------
 // Add a new product maintenance 
-app.post('/api/admin-product-maintenance', async (req, res) => {
+// app.post('/api/admin-product-maintenance', async (req, res) => {
+//   try {
+//     let { category, subCategory, brand, color, sizes } = req.body;
+
+//     // Ensure all fields are arrays
+//     category = Array.isArray(category) ? category : [category];
+//     subCategory = Array.isArray(subCategory) ? subCategory : [subCategory];
+//     brand = Array.isArray(brand) ? brand : [brand];
+//     color = Array.isArray(color) ? color : [color];
+//     sizes = Array.isArray(sizes) ? sizes : [sizes];
+
+//     const newEntry = { category, subCategory, brand, color, sizes };
+//     const result = await productMaintenanceCollection().insertOne(newEntry);
+//     res.status(201).json(result);
+//   } catch (error) {
+//     res.status(500).json({ error: "Failed to add product maintenance data." });
+//   }
+// });
+// Add a new product with productID
+// app.post('/api/adminadd-product-maintenance', async (req, res) => {
+//   try {
+//     let { category, subCategory, brand, color, sizes, productID } = req.body;
+
+//     // Generate productID if not provided
+//     if (!productID) {
+//       productID = `P-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+//     }
+
+//     // Ensure all fields are arrays
+//     category = Array.isArray(category) ? category : [category];
+//     subCategory = Array.isArray(subCategory) ? subCategory : [subCategory];
+//     brand = Array.isArray(brand) ? brand : [brand];
+//     color = Array.isArray(color) ? color : [color];
+//     sizes = Array.isArray(sizes) ? sizes : [sizes];
+
+//     const newEntry = { productID, category, subCategory, brand, color, sizes };
+
+//     const result = await productMaintenanceCollection().insertOne(newEntry);
+
+//     res.status(201).json({ message: "Product added successfully", data: result });
+//   } catch (error) {
+//     console.error("Error adding product maintenance data:", error);
+//     res.status(500).json({ error: "Failed to add product maintenance data." });
+//   }
+// });
+// With Unique category
+app.post('/api/adminadd-product-maintenance', async (req, res) => {
   try {
-    let { category, subCategory, brand, color, sizes } = req.body;
+    let { category, subCategory, brand, color, sizes, productID } = req.body;
 
-    // Ensure all fields are arrays
-    category = Array.isArray(category) ? category : [category];
-    subCategory = Array.isArray(subCategory) ? subCategory : [subCategory];
-    brand = Array.isArray(brand) ? brand : [brand];
-    color = Array.isArray(color) ? color : [color];
-    sizes = Array.isArray(sizes) ? sizes : [sizes];
+    // Generate productID if not provided
+    if (!productID) {
+      productID = `P-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    }
 
-    const newEntry = { category, subCategory, brand, color, sizes };
+    // Ensure category is a string, not an array
+    category = typeof category === 'string' ? category : category.join(", ");
+    subCategory = Array.isArray(subCategory) ? subCategory.join(", ") : subCategory;
+    brand = Array.isArray(brand) ? brand.join(", ") : brand;
+    color = Array.isArray(color) ? color.join(", ") : color;
+    sizes = Array.isArray(sizes) ? sizes.join(", ") : sizes;
+
+    const newEntry = { productID, category, subCategory, brand, color, sizes };
+
     const result = await productMaintenanceCollection().insertOne(newEntry);
-    res.status(201).json(result);
+
+    res.status(201).json({ message: "Product added successfully", data: result });
   } catch (error) {
+    console.error("Error adding product maintenance data:", error);
     res.status(500).json({ error: "Failed to add product maintenance data." });
+  }
+});
+
+// Add this route to check if a category already exists
+app.get('/api/check-category', async (req, res) => {
+  try {
+    const { category } = req.query;
+    const existingProduct = await productMaintenanceCollection().findOne({ category });
+    
+    if (existingProduct) {
+      return res.status(200).json({ exists: true });
+    }
+    return res.status(200).json({ exists: false });
+  } catch (error) {
+    console.error("Error checking category:", error);
+    res.status(500).json({ error: "Failed to check category" });
   }
 });
 
@@ -2489,9 +2353,37 @@ app.get('/api/products', async (req, res) => {
 });
 
 // API to add a new product (Modified 4/7)
+// app.post('/api/admin-add-product', async (req, res) => {
+//   try {
+//     const { staffUsername, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
+
+//     if (!productName || !category || !brand || !color || !imageUrl) {
+//       return res.status(400).json({ message: 'Missing required fields.' });
+//     }
+
+//     const newProduct = {
+//       ...(staffUsername && { staffUsername }),
+//       productName,
+//       category,
+//       subCategory: subCategory?.trim() || null,
+//       brand,
+//       gender: gender?.trim() || null,
+//       size: size?.trim() || null,
+//       color,
+//       imageUrl,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('products').insertOne(newProduct);
+//     return res.status(201).json({ message: 'Product added successfully.' });
+//   } catch (err) {
+//     console.error('Error adding product:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
 app.post('/api/admin-add-product', async (req, res) => {
   try {
-    const { staffUsername, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
+    const { staffUsername, productID, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
 
     if (!productName || !category || !brand || !color || !imageUrl) {
       return res.status(400).json({ message: 'Missing required fields.' });
@@ -2499,6 +2391,7 @@ app.post('/api/admin-add-product', async (req, res) => {
 
     const newProduct = {
       ...(staffUsername && { staffUsername }),
+      productID,
       productName,
       category,
       subCategory: subCategory?.trim() || null,
@@ -2581,6 +2474,62 @@ app.delete('/api/admin-delete-product/:id', async (req, res) => {
 
 // ------------ADMIN ADD A NEW DELIVERY PRODUCT API-------------------------
 // DELIVERY PRODUCT
+// app.post('/api/admin-add-delivery', async (req, res) => {
+//   try {
+//     const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
+
+//     if (!productId || !supplierId || !supplierPrice || !shopPrice || !quantity) {
+//       return res.status(400).json({ message: "Missing required fields." });
+//     }
+
+//     const product = await db.collection('products').findOne({ _id: new ObjectId(productId) });
+//     const supplier = await db.collection('suppliers').findOne({ _id: new ObjectId(supplierId) });
+
+//     if (!product || !supplier) {
+//       return res.status(404).json({ message: "Product or Supplier not found." });
+//     }
+
+//     const randomProductID = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8-char ID like 'A1B2C3D4'
+
+//     // Explicitly set staffUsername to null if it's not provided or is an empty string
+//     const validStaffUsername = staffUsername && staffUsername.trim() ? staffUsername : null;
+
+//     const newDelivery = {
+//       productID: randomProductID,
+//       product: {
+//         productName: product.productName,
+//         category: product.category,
+//         subCategory: product.subCategory,
+//         brand: product.brand,
+//         gender: product.gender || null,
+//         size: product.size || null,
+//         color: product.color,
+//         imageUrl: product.imageUrl,
+//       },
+//       supplier: {
+//         supplierID: supplier.supplierID,
+//         name: supplier.name,
+//         contactPerson: supplier.contactPerson,
+//         email: supplier.email,
+//         region: supplier.region,
+//         houseStreet: supplier.houseStreet,
+//         phone: supplier.phone,
+//       },
+//       supplierPrice,
+//       shopPrice,
+//       quantity,
+//       totalCost,
+//       staffUsername: validStaffUsername,
+//       addedAt: new Date(),
+//     };
+
+//     await db.collection('deliveries').insertOne(newDelivery);
+//     res.status(201).json({ message: "Delivery added successfully." });
+//   } catch (err) {
+//     console.error("Error adding delivery:", err);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
 app.post('/api/admin-add-delivery', async (req, res) => {
   try {
     const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
@@ -2596,13 +2545,11 @@ app.post('/api/admin-add-delivery', async (req, res) => {
       return res.status(404).json({ message: "Product or Supplier not found." });
     }
 
-    const randomProductID = crypto.randomBytes(4).toString("hex").toUpperCase(); // 8-char ID like 'A1B2C3D4'
-
     // Explicitly set staffUsername to null if it's not provided or is an empty string
     const validStaffUsername = staffUsername && staffUsername.trim() ? staffUsername : null;
 
     const newDelivery = {
-      productID: randomProductID,
+      productID: product.productID,
       product: {
         productName: product.productName,
         category: product.category,
@@ -2614,6 +2561,7 @@ app.post('/api/admin-add-delivery', async (req, res) => {
         imageUrl: product.imageUrl,
       },
       supplier: {
+        supplierID: supplier.supplierID,
         name: supplier.name,
         contactPerson: supplier.contactPerson,
         email: supplier.email,
@@ -2676,44 +2624,6 @@ app.post('/api/admin-restocks', async (req, res) => {
 });
 
 // ADD STOCKS + DELIVERY HISTORY
-// app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
-//   try {
-//     const deliveryId = req.params.id;
-
-//     // Find the delivery by ID
-//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
-
-//     if (!delivery) {
-//       return res.status(404).json({ message: "Delivery not found" });
-//     }
-
-//     const deliveryRecord = {
-//       productID: delivery.productID,
-//       product: delivery.product,
-//       supplier: delivery.supplier,
-//       supplierPrice: delivery.supplierPrice,
-//       shopPrice: delivery.shopPrice,
-//       quantity: delivery.quantity,
-//       totalCost: delivery.totalCost,
-//       staffUsername: delivery.staffUsername,
-//       deliveredAt: new Date(), // Changed to deliveredAt to distinguish it from addedAt
-//     };
-
-//     // Insert into "stocks" collection
-//     await db.collection('stocks').insertOne(deliveryRecord);
-
-//     // Insert into "delivery_history" collection
-//     await db.collection('delivery_history').insertOne(deliveryRecord);
-
-//     // Remove from "deliveries" collection
-//     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
-
-//     res.status(200).json({ message: "Set as delivered, moved to stock, and saved to history." });
-//   } catch (err) {
-//     console.error("Error setting as delivered:", err);
-//     res.status(500).json({ message: "Internal server error" });
-//   }
-// });
 app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
   try {
     const deliveryId = req.params.id;
@@ -2779,7 +2689,7 @@ app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
 
 // ------------END OF ADMIN ADD A NEW DELIVERY PRODUCT API-------------------------
 
-// -----------AUDIT TRAIL LOGS-----------------
+// ---------------------AUDIT TRAIL LOGS---------------
 // Get audit logs by role
 app.get('/api/audit-logs', async (req, res) => {
   const role = req.query.role;
@@ -2791,9 +2701,21 @@ app.get('/api/audit-logs', async (req, res) => {
     res.status(500).json({ message: 'Error fetching audit logs' });
   }
 });
-// -----------END OF AUDIT TRAIL LOGS-----------------
+// -----------END OF AUDIT TRAIL LOGS-------------------
 
 // -------------------ADMIN VAT API----------------------------
+// Get VAT
+app.get('/api/admin/vat', async (req, res) => {
+  try {
+    const vatCollection = db.collection('vat');
+    const vat = await vatCollection.findOne({});
+    res.status(200).json(vat || {});
+  } catch (err) {
+    console.error('Error fetching VAT:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Add or update VAT (only one document allowed)
 app.post('/api/admin/vat', async (req, res) => {
   try {
@@ -2813,18 +2735,6 @@ app.post('/api/admin/vat', async (req, res) => {
     res.status(201).json({ message: 'VAT added successfully' });
   } catch (err) {
     console.error('Error adding VAT:', err);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Get VAT
-app.get('/api/admin/vat', async (req, res) => {
-  try {
-    const vatCollection = db.collection('vat');
-    const vat = await vatCollection.findOne({});
-    res.status(200).json(vat || {});
-  } catch (err) {
-    console.error('Error fetching VAT:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -2850,21 +2760,42 @@ app.put('/api/admin/vat', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-// ----------------END OF ADMIN VAT API------------------------------------
+// ----------------END OF ADMIN VAT API--------------------------
 
-// Admin getting stocks
-// Fetch all products for admin
-// app.get('/api/adminStockProducts', async (req, res) => {
+// -------------------SUPPLIER------------------------------
+// Admin ADDING new supplier
+// app.post('/api/adminAdd-supplier', async (req, res) => {
 //   try {
-//     const products = await db.collection('products').find({}).toArray(); // No filtering, fetch all products
-//     res.status(200).json(products);
+//     const { name, contactPerson, email, region, houseStreet, phone } = req.body;
+
+//     if (!name || !contactPerson || !email || !region || !houseStreet || !phone) {
+//       return res.status(400).json({ message: "All fields are required." });
+//     }
+
+//     // Check if the supplier name already exists in the database
+//     const existingSupplier = await db.collection('suppliers').findOne({ name });
+//     if (existingSupplier) {
+//       return res.status(400).json({ message: "Supplier name must be unique." });
+//     }
+
+//     const newSupplier = {
+//       name,
+//       contactPerson,
+//       email,
+//       region,
+//       houseStreet,
+//       phone,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('suppliers').insertOne(newSupplier);
+//     return res.status(201).json({ message: "Supplier added successfully." });
 //   } catch (err) {
-//     console.error('Error fetching admin products:', err);
-//     res.status(500).json({ message: 'Internal server error' });
+//     console.error("Error adding supplier:", err);
+//     return res.status(500).json({ message: "Internal server error." });
 //   }
 // });
-
-// Admin ADDING new supplier
+// ADMIN Adding Supplier with supplierID
 app.post('/api/adminAdd-supplier', async (req, res) => {
   try {
     const { name, contactPerson, email, region, houseStreet, phone } = req.body;
@@ -2873,13 +2804,17 @@ app.post('/api/adminAdd-supplier', async (req, res) => {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    // Check if the supplier name already exists in the database
+    // Check if the supplier name already exists
     const existingSupplier = await db.collection('suppliers').findOne({ name });
     if (existingSupplier) {
       return res.status(400).json({ message: "Supplier name must be unique." });
     }
 
+    // Generate unique supplierID
+    const supplierID = `SUP-${Date.now()}`;
+
     const newSupplier = {
+      supplierID,
       name,
       contactPerson,
       email,
@@ -2920,6 +2855,65 @@ app.get('/api/deliveries', async (req, res) => {
   } catch (err) {
     console.error('Error fetching deliveries:', err);
     res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// -------------------END OF SUPPLIER------------------------------
+
+// admin mark as received
+app.post('/api/admin-mark-received/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { orderReceivedDate } = req.body;
+
+    const toReceive = db.collection('toReceive');
+    const orderReceived = db.collection('orderReceived');
+
+    const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found in toReceive." });
+    }
+
+    // Attach orderReceivedDate to order
+    order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
+
+    await orderReceived.insertOne(order);
+    await toReceive.deleteOne({ _id: new ObjectId(orderId) });
+
+    res.status(200).json({ message: "Order marked as received." });
+  } catch (error) {
+    console.error("Error marking order as received:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// admin cancel to receive orders
+app.post('/api/admin-cancel-order/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { canceledReason } = req.body;
+
+    const orderReceived = db.collection('toReceive');
+    const canceledOrders = db.collection('canceledOrders');
+
+    const order = await orderReceived.findOne({ _id: new ObjectId(orderId) });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found in orderReceived." });
+    }
+
+    // Add canceledReason and canceledDate
+    order.canceledReason = canceledReason;
+    order.canceledDate = new Date().toISOString().split('T')[0];
+
+    await canceledOrders.insertOne(order);
+    await orderReceived.deleteOne({ _id: new ObjectId(orderId) });
+
+    res.status(200).json({ message: "Order canceled successfully." });
+  } catch (error) {
+    console.error("Error canceling order:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 });
 
@@ -3038,8 +3032,6 @@ app.get('/api/search-userStocks', async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
-
-
 
 // Update stock by ID
 app.put('/api/update-stock/:id', async (req, res) => {
