@@ -4,7 +4,8 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 const bodyParser = require('body-parser');
 const cors = require("cors");
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+// const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { ObjectId } = require('mongodb');
 const crypto = require("crypto");
 
