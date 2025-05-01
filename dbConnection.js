@@ -2224,33 +2224,6 @@ app.post('/api/admin', async (req, res) => {
 //   }
 // });
 // Add a new product with productID
-// app.post('/api/adminadd-product-maintenance', async (req, res) => {
-//   try {
-//     let { category, subCategory, brand, color, sizes, productID } = req.body;
-
-//     // Generate productID if not provided
-//     if (!productID) {
-//       productID = `P-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-//     }
-
-//     // Ensure all fields are arrays
-//     category = Array.isArray(category) ? category : [category];
-//     subCategory = Array.isArray(subCategory) ? subCategory : [subCategory];
-//     brand = Array.isArray(brand) ? brand : [brand];
-//     color = Array.isArray(color) ? color : [color];
-//     sizes = Array.isArray(sizes) ? sizes : [sizes];
-
-//     const newEntry = { productID, category, subCategory, brand, color, sizes };
-
-//     const result = await productMaintenanceCollection().insertOne(newEntry);
-
-//     res.status(201).json({ message: "Product added successfully", data: result });
-//   } catch (error) {
-//     console.error("Error adding product maintenance data:", error);
-//     res.status(500).json({ error: "Failed to add product maintenance data." });
-//   }
-// });
-// With Unique category
 app.post('/api/adminadd-product-maintenance', async (req, res) => {
   try {
     let { category, subCategory, brand, color, sizes, productID } = req.body;
@@ -2260,12 +2233,12 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
       productID = `P-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     }
 
-    // Ensure category is a string, not an array
-    category = typeof category === 'string' ? category : category.join(", ");
-    subCategory = Array.isArray(subCategory) ? subCategory.join(", ") : subCategory;
-    brand = Array.isArray(brand) ? brand.join(", ") : brand;
-    color = Array.isArray(color) ? color.join(", ") : color;
-    sizes = Array.isArray(sizes) ? sizes.join(", ") : sizes;
+    // Ensure all fields are arrays
+    category = Array.isArray(category) ? category : [category];
+    subCategory = Array.isArray(subCategory) ? subCategory : [subCategory];
+    brand = Array.isArray(brand) ? brand : [brand];
+    color = Array.isArray(color) ? color : [color];
+    sizes = Array.isArray(sizes) ? sizes : [sizes];
 
     const newEntry = { productID, category, subCategory, brand, color, sizes };
 
@@ -2277,6 +2250,33 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
     res.status(500).json({ error: "Failed to add product maintenance data." });
   }
 });
+// With Unique category
+// app.post('/api/adminadd-product-maintenance', async (req, res) => {
+//   try {
+//     let { category, subCategory, brand, color, sizes, productID } = req.body;
+
+//     // Generate productID if not provided
+//     if (!productID) {
+//       productID = `P-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+//     }
+
+//     // Ensure category is a string, not an array
+//     category = typeof category === 'string' ? category : category.join(", ");
+//     subCategory = Array.isArray(subCategory) ? subCategory.join(", ") : subCategory;
+//     brand = Array.isArray(brand) ? brand.join(", ") : brand;
+//     color = Array.isArray(color) ? color.join(", ") : color;
+//     sizes = Array.isArray(sizes) ? sizes.join(", ") : sizes;
+
+//     const newEntry = { productID, category, subCategory, brand, color, sizes };
+
+//     const result = await productMaintenanceCollection().insertOne(newEntry);
+
+//     res.status(201).json({ message: "Product added successfully", data: result });
+//   } catch (error) {
+//     console.error("Error adding product maintenance data:", error);
+//     res.status(500).json({ error: "Failed to add product maintenance data." });
+//   }
+// });
 
 // Add this route to check if a category already exists
 app.get('/api/check-category', async (req, res) => {
