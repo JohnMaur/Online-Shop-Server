@@ -643,6 +643,71 @@ app.delete('/api/delete-cart/:id', async (req, res) => {
 
 // --------------USER ORDER PROCESS-------------------------
 // API to place an order
+// app.post('/api/place-order', async (req, res) => {
+//   try {
+//     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
+
+//     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
+//       return res.status(400).json({ message: 'Invalid order request.' });
+//     }
+
+//     const userCart2 = db.collection('userCart');
+//     const userShippingCollection = db.collection('userShipping');
+//     const stocksCollection = db.collection('stocks');
+//     const auditLogs = db.collection('auditTrailLogs');
+//     const accountInfoCollection = db.collection('account_info');
+
+//     const accountInfo = await accountInfoCollection.findOne({ username });
+
+//     for (const item of selectedItems) {
+//       const { _id, quantity, productID } = item;
+
+//       // Move item to userShipping
+//       await userShippingCollection.insertOne({
+//         username,
+//         staffUsername: item.staffUsername,
+//         productID: item.productID,
+//         productName: item.product.productName,
+//         price: totalPrice,
+//         quantity: item.quantity,
+//         paymentMethod,
+//         shippingDate: shippingOptions[item._id] || 'Standard',
+//         imageUrl: item.product.imageUrl,
+//         orderedAt: new Date(),
+//       });
+
+//       // Update product quantity in stocks using productID
+//       await stocksCollection.updateOne(
+//         { productID: productID },
+//         { $inc: { quantity: -quantity } }
+//       );
+
+//       // Log audit per item
+//       const auditEntry = {
+//         username,
+//         action: 'Place an Order',
+//         role: 'Customer',
+//         affectedId: productID,
+//         timestamp: new Date(),
+//         accountInfo: accountInfo || {},
+//       };
+//       await auditLogs.insertOne(auditEntry);
+//     }
+
+//     // Remove all items from cart
+//     await userCart2.deleteMany({
+//       username,
+//       _id: { $in: selectedItems.map(item => item._id) }
+//     });
+
+//     res.status(200).json({ message: 'Order placed successfully and audit logged.' });
+//   } catch (error) {
+//     console.error("Error placing order:", error);
+//     res.status(500).json({ message: 'Failed to place order.' });
+//   }
+// });
+
+
 app.post('/api/place-order', async (req, res) => {
   try {
     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
@@ -700,7 +765,33 @@ app.post('/api/place-order', async (req, res) => {
       _id: { $in: selectedItems.map(item => item._id) }
     });
 
-    res.status(200).json({ message: 'Order placed successfully and audit logged.' });
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: "onlineshopmacky@gmail.com",
+        pass: "yiqg icdd jjzh pdvg", // This should be a Gmail App Password (not regular password)
+      },
+      tls: {
+        rejectUnauthorized: false, // Add this line to allow self-signed certificates
+      },
+    });
+
+    const mailOptions = {
+      from: "onlineshopmacky@gmail.com",
+      to: accountInfo.gmail, // User's Gmail address
+      subject: 'Order Confirmation',
+      text: `Hello ${accountInfo.recipientName},\n\nYour order has been successfully placed!\n\nOrder Details:\n\nTotal Price: ₱${totalPrice}\nPayment Method: ${paymentMethod}\nShipping Address: ${accountInfo.houseStreet}, ${accountInfo.region}\n\nThank you for shopping with us!`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.log('Error sending email:', error);
+      } else {
+        console.log('Email sent: ' + info.response);
+      }
+    });
+
+    res.status(200).json({ message: 'Order placed successfully, audit logged, and confirmation email sent.' });
   } catch (error) {
     console.error("Error placing order:", error);
     res.status(500).json({ message: 'Failed to place order.' });
