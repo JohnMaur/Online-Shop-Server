@@ -83,6 +83,40 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// app.post('/api/login', async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
+
+//     if (!username || !password) {
+//       return res.status(400).json({ message: 'Username and password are required.' });
+//     }
+
+//     const user = await db.collection('users').findOne({ username });
+//     if (!user) {
+//       return res.status(404).json({ message: 'User not found.' });
+//     }
+
+//     const isPasswordValid = await bcrypt.compare(password, user.password);
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ message: 'Invalid credentials.' });
+//     }
+
+//     const token = generateToken(user);
+
+//     // Check if user has account info
+//     const userInfo = await db.collection('account_info').findOne({ username });
+
+//     return res.status(200).json({
+//       message: 'Login successful',
+//       token,
+//       needsUpdate: !userInfo, // If no account info exists, prompt update
+//     });
+//   } catch (err) {
+//     console.error('Error during login:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -96,7 +130,15 @@ app.post('/api/login', async (req, res) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    let isPasswordValid = false;
+
+    // Check if the stored password is a bcrypt hash (typically starts with $2a$, $2b$, or $2y$)
+    if (user.password.startsWith('$2')) {
+      isPasswordValid = await bcrypt.compare(password, user.password);
+    } else {
+      isPasswordValid = password === user.password;
+    }
+
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
@@ -109,7 +151,7 @@ app.post('/api/login', async (req, res) => {
     return res.status(200).json({
       message: 'Login successful',
       token,
-      needsUpdate: !userInfo, // If no account info exists, prompt update
+      needsUpdate: !userInfo,
     });
   } catch (err) {
     console.error('Error during login:', err);
@@ -3106,25 +3148,55 @@ app.get('/api/user-list', async (req, res) => {
 });
 
 // EDIT user ADMIN
+// app.put('/api/user/:username', async (req, res) => {
+//   try {
+//     const { username } = req.params;
+//     const { recipientName, phoneNumber, region, houseStreet } = req.body;
+
+//     const updatedUser = await db.collection('account_info').updateOne(
+//       { username },
+//       { $set: { recipientName, phoneNumber, region, houseStreet } }
+//     );
+
+//     if (updatedUser.modifiedCount > 0) {
+//       res.status(200).json({ message: 'User updated successfully' });
+//     } else {
+//       res.status(404).json({ message: 'User not found or no changes made' });
+//     }
+//   } catch (err) {
+//     res.status(500).json({ message: 'Internal server error' });
+//   }
+// });
+
+// EDIT user ADMIN - Update account_info and users (password)
 app.put('/api/user/:username', async (req, res) => {
   try {
     const { username } = req.params;
-    const { recipientName, phoneNumber, region, houseStreet } = req.body;
+    const { recipientName, phoneNumber, region, houseStreet, password } = req.body;
 
-    const updatedUser = await db.collection('account_info').updateOne(
+    const dbUpdate1 = await db.collection('account_info').updateOne(
       { username },
       { $set: { recipientName, phoneNumber, region, houseStreet } }
     );
 
-    if (updatedUser.modifiedCount > 0) {
+    const dbUpdate2 = password
+      ? await db.collection('users').updateOne(
+          { username },
+          { $set: { password } }
+        )
+      : { modifiedCount: 0 };
+
+    if (dbUpdate1.modifiedCount > 0 || dbUpdate2.modifiedCount > 0) {
       res.status(200).json({ message: 'User updated successfully' });
     } else {
       res.status(404).json({ message: 'User not found or no changes made' });
     }
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 
 // DELETE user ADMIN
 app.delete('/api/user/:username', async (req, res) => {
