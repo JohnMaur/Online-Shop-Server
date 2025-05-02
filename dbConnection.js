@@ -270,7 +270,7 @@ app.post('/api/forgot-password', async (req, res) => {
         rejectUnauthorized: false, // Add this line to allow self-signed certificates
       },
     });
-    
+
 
     await transporter.sendMail({
       from: "bennydictuz3@gmail.com",
@@ -376,7 +376,7 @@ app.post('/api/update-account', async (req, res) => {
       await db.collection('account_info').updateOne(
         { username },
         { $set: { region, houseStreet, recipientName, phoneNumber, gmail } }
-      );      
+      );
     } else {
       // Insert new info
       await db.collection('account_info').insertOne({ username, region, houseStreet, recipientName, phoneNumber, gmail });
@@ -922,6 +922,70 @@ app.get('/api/order-received/:username', async (req, res) => {
 });
 
 // Cancel shipping order with Audit Trail Logs
+// app.post('/api/user-cancel-order/:orderId', async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { canceledReason } = req.body;
+
+//     if (!orderId || !canceledReason) {
+//       return res.status(400).json({ message: "Order ID and reason are required." });
+//     }
+
+//     const userShippingCollection = db.collection('userShipping');
+//     const stocksCollection = db.collection('stocks');
+//     const canceledOrders = db.collection('canceledOrders');
+//     const auditLogs = db.collection('auditTrailLogs');
+//     const accountInfoCollection = db.collection('account_info');
+
+//     // Find the order
+//     const order = await userShippingCollection.findOne({ _id: new ObjectId(orderId) });
+
+//     if (!order) {
+//       return res.status(404).json({ message: "Order not found." });
+//     }
+
+//     // Restore stock
+//     await stocksCollection.updateOne(
+//       { productID: order.productID },
+//       { $inc: { quantity: order.quantity } }
+//     );
+
+//     // Add cancellation info
+//     order.canceledReason = canceledReason;
+//     order.canceledDate = new Date().toISOString().split('T')[0];
+
+//     // Insert to canceledOrders
+//     await canceledOrders.insertOne(order);
+
+//     // Remove from userShipping
+//     const result = await userShippingCollection.deleteOne({ _id: new ObjectId(orderId) });
+
+//     if (result.deletedCount === 0) {
+//       return res.status(500).json({ message: "Failed to delete the order." });
+//     }
+
+//     // Fetch account info for audit
+//     const accountInfo = await accountInfoCollection.findOne({ username: order.username });
+
+//     // Add to audit trail
+//     const auditEntry = {
+//       username: order.username,
+//       action: 'Customer canceled the order',
+//       role: 'Customer',
+//       affectedId: order.productID,
+//       timestamp: new Date(),
+//       accountInfo: accountInfo || {},
+//     };
+
+//     await auditLogs.insertOne(auditEntry);
+
+//     res.status(200).json({ message: "Order cancelled and stock restored successfully." });
+//   } catch (error) {
+//     console.error("Error cancelling order:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+
 app.post('/api/user-cancel-order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -978,6 +1042,34 @@ app.post('/api/user-cancel-order/:orderId', async (req, res) => {
     };
 
     await auditLogs.insertOne(auditEntry);
+
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: "onlineshopmacky@gmail.com",
+        pass: "yiqg icdd jjzh pdvg", // This should be a Gmail App Password (not regular password)
+      },
+      tls: {
+        rejectUnauthorized: false, // Add this line to allow self-signed certificates
+      },
+    });
+
+    // Send cancellation email to customer
+    const mailOptions = {
+      from: 'onlineshopmacky@gmail.com', // Replace with your email address
+      to: accountInfo.gmail, // User's email from the account info
+      subject: 'Order Cancellation Confirmation',
+      text: `Dear ${accountInfo.username},\n\nYour order (ID: ${orderId}) has been successfully canceled.\n\nReason: ${canceledReason}\n\nBest regards,\nYour Store Name`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.log('Error sending email:', error);
+      } else {
+        console.log('Email sent: ' + info.response);
+      }
+    });
 
     res.status(200).json({ message: "Order cancelled and stock restored successfully." });
   } catch (error) {
@@ -1296,7 +1388,7 @@ app.put('/api/update-review', async (req, res) => {
 
 //   try {
 //     const review = await db.collection("userReview").findOne({ orderId, username });
-    
+
 //     if (review) {
 //       res.status(200).json({ hasReviewed: true, review });
 //     } else {
@@ -2568,7 +2660,7 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
 //   try {
 //     const { category } = req.query;
 //     const existingProduct = await productMaintenanceCollection().findOne({ category });
-    
+
 //     if (existingProduct) {
 //       return res.status(200).json({ exists: true });
 //     }
@@ -3444,9 +3536,9 @@ app.put('/api/user/:username', async (req, res) => {
 
     const dbUpdate2 = password
       ? await db.collection('users').updateOne(
-          { username },
-          { $set: { password } }
-        )
+        { username },
+        { $set: { password } }
+      )
       : { modifiedCount: 0 };
 
     if (dbUpdate1.modifiedCount > 0 || dbUpdate2.modifiedCount > 0) {
