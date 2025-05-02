@@ -2135,6 +2135,7 @@ app.post('/api/restocks', async (req, res) => {
     }
 
     const newDelivery = {
+      deliveryID: stock.deliveryID,
       productID: stock.productID,
       product: stock.product,
       supplier: supplier,
@@ -2171,44 +2172,214 @@ app.post('/api/restocks', async (req, res) => {
 });
 
 // ADD STOCKS + DELIVERY HISTORY + AUDIT
+// app.post('/api/set-as-delivered/:id', async (req, res) => {
+//   try {
+//     const deliveryId = req.params.id;
+//     const { staffUsername } = req.body; // ✅ Extract staffUsername from the request body
+
+//     if (!staffUsername) {
+//       return res.status(400).json({ message: "Staff username is required." });
+//     }
+
+//     // Find the delivery by ID
+//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+
+//     if (!delivery) {
+//       return res.status(404).json({ message: "Delivery not found" });
+//     }
+
+//     const stocksCollection = db.collection('stocks');
+
+//     // Check if stock with this productID already exists
+//     const existingStock = await stocksCollection.findOne({ productID: delivery.productID });
+
+//     if (existingStock) {
+//       // Update supplierPrice, shopPrice, and increment quantity
+//       await stocksCollection.updateOne(
+//         { productID: delivery.productID },
+//         {
+//           $set: {
+//             supplierPrice: delivery.supplierPrice,
+//             shopPrice: delivery.shopPrice,
+//           },
+//           $inc: {
+//             quantity: delivery.quantity
+//           }
+//         }
+//       );
+//     } else {
+//       // Insert new stock record
+//       const newStock = {
+//         productID: delivery.productID,
+//         product: delivery.product,
+//         supplier: delivery.supplier,
+//         supplierPrice: delivery.supplierPrice,
+//         shopPrice: delivery.shopPrice,
+//         quantity: delivery.quantity,
+//         totalCost: delivery.totalCost,
+//         staffUsername: delivery.staffUsername,
+//         deliveredAt: new Date()
+//       };
+
+//       await stocksCollection.insertOne(newStock);
+//     }
+
+//     // Always insert into delivery_history
+//     await db.collection('delivery_history').insertOne({
+//       ...delivery,
+//       deliveredAt: new Date()
+//     });
+
+//     // Remove from deliveries
+//     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+
+//     // Fetch staff info
+//     const staffCollection = db.collection('staff');
+//     const staffInfo = await staffCollection.findOne({ username: staffUsername });
+
+//     // Insert audit trail log
+//     const auditLogs = db.collection('auditTrailLogs');
+//     await auditLogs.insertOne({
+//       username: staffUsername,
+//       role: "Staff",
+//       action: "Staff Set a Delivered Products",
+//       affectedId: delivery.productID || null,
+//       timestamp: new Date(),
+//       accountInfo: staffInfo || {},
+//     });
+
+//     res.status(200).json({ message: "Set as delivered, moved to stock, and saved to history." });
+//   } catch (err) {
+//     console.error("Error setting as delivered:", err);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+// app.post('/api/set-as-delivered/:id', async (req, res) => {
+//   try {
+//     const deliveryId = req.params.id;
+//     const { staffUsername } = req.body;
+
+//     console.log(deliveryId);
+
+//     if (!staffUsername) {
+//       return res.status(400).json({ message: "Staff username is required." });
+//     }
+
+//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+
+//     if (!delivery) {
+//       return res.status(404).json({ message: "Delivery not found" });
+//     }
+
+//     const stocksCollection = db.collection('stocks');
+
+//     // ✅ Check if this deliveryID has already been used in stocks
+//     const existingByDeliveryID = await stocksCollection.findOne({ deliveryID: delivery.deliveryID });
+
+//     if (!existingByDeliveryID) {
+//       // ✅ Either insert new or update by deliveryID
+//       const existingStock = await stocksCollection.findOne({ deliveryID: delivery.deliveryID });
+
+//       if (existingStock) {
+//         await stocksCollection.updateOne(
+//           { deliveryID: delivery.deliveryID },
+//           {
+//             $set: {
+//               supplierPrice: delivery.supplierPrice,
+//               shopPrice: delivery.shopPrice,
+//             },
+//             $inc: {
+//               quantity: delivery.quantity
+//             }
+//           }
+//         );
+//       } else {
+//         // ✅ Insert as new stock
+//         await stocksCollection.insertOne({
+//           deliveryID: delivery.deliveryID,
+//           productID: delivery.productID,
+//           product: delivery.product,
+//           supplier: delivery.supplier,
+//           supplierPrice: delivery.supplierPrice,
+//           shopPrice: delivery.shopPrice,
+//           quantity: delivery.quantity,
+//           totalCost: delivery.totalCost,
+//           staffUsername: delivery.staffUsername,
+//           deliveredAt: new Date()
+//         });
+//       }
+
+//       // ✅ Always insert into delivery history
+//       await db.collection('delivery_history').insertOne({
+//         ...delivery,
+//         deliveredAt: new Date()
+//       });
+
+//       // ✅ Remove from deliveries
+//       await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+
+//       // ✅ Log the audit trail
+//       const staffInfo = await db.collection('staff').findOne({ username: staffUsername });
+//       await db.collection('auditTrailLogs').insertOne({
+//         username: staffUsername,
+//         role: "Staff",
+//         action: "Staff Set a Delivered Product",
+//         affectedId: delivery.productID,
+//         timestamp: new Date(),
+//         accountInfo: staffInfo || {},
+//       });
+
+//       return res.status(200).json({ message: "Set as delivered, added to stock, and logged to history." });
+
+//     } else {
+//       return res.status(409).json({ message: "This delivery has already been processed into stocks." });
+//     }
+
+//   } catch (err) {
+//     console.error("Error setting as delivered:", err);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+
 app.post('/api/set-as-delivered/:id', async (req, res) => {
   try {
     const deliveryId = req.params.id;
-    const { staffUsername } = req.body; // ✅ Extract staffUsername from the request body
+    const { staffUsername } = req.body;
 
     if (!staffUsername) {
       return res.status(400).json({ message: "Staff username is required." });
     }
 
-    // Find the delivery by ID
+    // Find the delivery from the deliveries collection
     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
 
     if (!delivery) {
-      return res.status(404).json({ message: "Delivery not found" });
+      return res.status(404).json({ message: "Delivery not found." });
     }
 
     const stocksCollection = db.collection('stocks');
 
-    // Check if stock with this productID already exists
-    const existingStock = await stocksCollection.findOne({ productID: delivery.productID });
+    // Check if the delivery has already been processed into stocks
+    const existingStock = await stocksCollection.findOne({ deliveryID: delivery.deliveryID });
 
     if (existingStock) {
-      // Update supplierPrice, shopPrice, and increment quantity
+      // If it exists, update the stock
       await stocksCollection.updateOne(
-        { productID: delivery.productID },
+        { deliveryID: delivery.deliveryID },
         {
           $set: {
             supplierPrice: delivery.supplierPrice,
             shopPrice: delivery.shopPrice,
           },
           $inc: {
-            quantity: delivery.quantity
-          }
+            quantity: delivery.quantity, // increment the stock quantity
+          },
         }
       );
     } else {
-      // Insert new stock record
-      const newStock = {
+      // If it doesn't exist, insert a new stock record
+      await stocksCollection.insertOne({
+        deliveryID: delivery.deliveryID,
         productID: delivery.productID,
         product: delivery.product,
         supplier: delivery.supplier,
@@ -2217,42 +2388,37 @@ app.post('/api/set-as-delivered/:id', async (req, res) => {
         quantity: delivery.quantity,
         totalCost: delivery.totalCost,
         staffUsername: delivery.staffUsername,
-        deliveredAt: new Date()
-      };
-
-      await stocksCollection.insertOne(newStock);
+        deliveredAt: new Date(),
+      });
     }
 
-    // Always insert into delivery_history
+    // Insert into delivery history
     await db.collection('delivery_history').insertOne({
       ...delivery,
-      deliveredAt: new Date()
+      deliveredAt: new Date(),
     });
 
-    // Remove from deliveries
+    // Remove the delivery from the deliveries collection
     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
 
-    // Fetch staff info
-    const staffCollection = db.collection('staff');
-    const staffInfo = await staffCollection.findOne({ username: staffUsername });
-
-    // Insert audit trail log
-    const auditLogs = db.collection('auditTrailLogs');
-    await auditLogs.insertOne({
+    // Log the audit trail
+    const staffInfo = await db.collection('staff').findOne({ username: staffUsername });
+    await db.collection('auditTrailLogs').insertOne({
       username: staffUsername,
-      role: "Staff",
-      action: "Staff Set a Delivered Products",
-      affectedId: delivery.productID || null,
+      role: 'Staff',
+      action: 'Staff Set a Delivered Product',
+      affectedId: delivery.productID,
       timestamp: new Date(),
       accountInfo: staffInfo || {},
     });
 
-    res.status(200).json({ message: "Set as delivered, moved to stock, and saved to history." });
+    return res.status(200).json({ message: "Set as delivered, added to stock, and logged to history." });
   } catch (err) {
-    console.error("Error setting as delivered:", err);
+    console.error('Error setting as delivered:', err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 
 // ----------==---END OF STAFF DELIVERY API------------------------------
 
@@ -2928,9 +3094,63 @@ app.delete('/api/admin-delete-product/:id', async (req, res) => {
 //     res.status(500).json({ message: "Internal server error." });
 //   }
 // });
+// app.post('/api/admin-add-delivery', async (req, res) => {
+//   try {
+//     const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
+
+//     if (!productId || !supplierId || !supplierPrice || !shopPrice || !quantity) {
+//       return res.status(400).json({ message: "Missing required fields." });
+//     }
+
+//     const product = await db.collection('products').findOne({ _id: new ObjectId(productId) });
+//     const supplier = await db.collection('suppliers').findOne({ _id: new ObjectId(supplierId) });
+
+//     if (!product || !supplier) {
+//       return res.status(404).json({ message: "Product or Supplier not found." });
+//     }
+
+//     // Explicitly set staffUsername to null if it's not provided or is an empty string
+//     const validStaffUsername = staffUsername && staffUsername.trim() ? staffUsername : null;
+
+//     const newDelivery = {
+//       productID: product.productID,
+//       product: {
+//         productName: product.productName,
+//         category: product.category,
+//         subCategory: product.subCategory,
+//         brand: product.brand,
+//         gender: product.gender || null,
+//         size: product.size || null,
+//         color: product.color,
+//         imageUrl: product.imageUrl,
+//       },
+//       supplier: {
+//         supplierID: supplier.supplierID,
+//         name: supplier.name,
+//         contactPerson: supplier.contactPerson,
+//         email: supplier.email,
+//         region: supplier.region,
+//         houseStreet: supplier.houseStreet,
+//         phone: supplier.phone,
+//       },
+//       supplierPrice,
+//       shopPrice,
+//       quantity,
+//       totalCost,
+//       staffUsername: validStaffUsername,
+//       addedAt: new Date(),
+//     };
+
+//     await db.collection('deliveries').insertOne(newDelivery);
+//     res.status(201).json({ message: "Delivery added successfully." });
+//   } catch (err) {
+//     console.error("Error adding delivery:", err);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
 app.post('/api/admin-add-delivery', async (req, res) => {
   try {
-    const { productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
+    const { deliveryID, productId, supplierId, supplierPrice, shopPrice, quantity, totalCost, staffUsername } = req.body;
 
     if (!productId || !supplierId || !supplierPrice || !shopPrice || !quantity) {
       return res.status(400).json({ message: "Missing required fields." });
@@ -2947,6 +3167,7 @@ app.post('/api/admin-add-delivery', async (req, res) => {
     const validStaffUsername = staffUsername && staffUsername.trim() ? staffUsername : null;
 
     const newDelivery = {
+      deliveryID: deliveryID,
       productID: product.productID,
       product: {
         productName: product.productName,
