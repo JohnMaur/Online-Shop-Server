@@ -2358,20 +2358,40 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
 // });
 
 // Add this route to check if a category already exists
+// app.get('/api/check-category', async (req, res) => {
+//   try {
+//     const { category } = req.query;
+//     const existingProduct = await productMaintenanceCollection().findOne({ category });
+    
+//     if (existingProduct) {
+//       return res.status(200).json({ exists: true });
+//     }
+//     return res.status(200).json({ exists: false });
+//   } catch (error) {
+//     console.error("Error checking category:", error);
+//     res.status(500).json({ error: "Failed to check category" });
+//   }
+// });
+// Add this route in your server
 app.get('/api/check-category', async (req, res) => {
   try {
-    const { category } = req.query;
-    const existingProduct = await productMaintenanceCollection().findOne({ category });
-    
-    if (existingProduct) {
-      return res.status(200).json({ exists: true });
+    const { category, excludeId } = req.query;
+    const query = {
+      category: Array.isArray(category) ? { $in: category } : category,
+    };
+
+    if (excludeId) {
+      query._id = { $ne: new ObjectId(excludeId) };
     }
-    return res.status(200).json({ exists: false });
+
+    const exists = await productMaintenanceCollection().findOne(query);
+    res.json({ exists: !!exists });
   } catch (error) {
-    console.error("Error checking category:", error);
-    res.status(500).json({ error: "Failed to check category" });
+    console.error("Category check failed:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
+
 
 // Get all product maintenance entries
 app.get('/api/product-maintenance', async (req, res) => {
