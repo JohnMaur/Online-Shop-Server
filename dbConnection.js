@@ -161,6 +161,33 @@ app.post('/api/login', async (req, res) => {
 
 // User change password
 // Change password
+// app.post("/api/userChange-password", async (req, res) => {
+//   try {
+//     const { username, oldPassword, newPassword } = req.body;
+
+//     if (!username || !oldPassword || !newPassword) {
+//       return res.status(400).json({ message: "All fields are required." });
+//     }
+
+//     const user = await db.collection("users").findOne({ username });
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found." });
+//     }
+
+//     const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ message: "Incorrect old password." });
+//     }
+
+//     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+//     await db.collection("users").updateOne({ username }, { $set: { password: hashedNewPassword } });
+
+//     res.status(200).json({ message: "Password changed successfully." });
+//   } catch (err) {
+//     console.error("Error changing password:", err);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
 app.post("/api/userChange-password", async (req, res) => {
   try {
     const { username, oldPassword, newPassword } = req.body;
@@ -174,11 +201,20 @@ app.post("/api/userChange-password", async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    let isPasswordValid = false;
+
+    // Detect if the password is hashed (bcrypt hashes start with $2)
+    if (user.password.startsWith('$2')) {
+      isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    } else {
+      isPasswordValid = oldPassword === user.password;
+    }
+
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Incorrect old password." });
     }
 
+    // Always hash the new password before saving
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
     await db.collection("users").updateOne({ username }, { $set: { password: hashedNewPassword } });
 
@@ -188,6 +224,7 @@ app.post("/api/userChange-password", async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 });
+
 
 // --------------------------END OF USER ACCOUNT--------------------------
 
