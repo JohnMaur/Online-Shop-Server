@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { ObjectId } = require('mongodb');
 const crypto = require("crypto");
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -225,6 +226,92 @@ app.post("/api/userChange-password", async (req, res) => {
   }
 });
 
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+app.post('/api/forgot-password', async (req, res) => {
+  const { username } = req.body;
+
+  try {
+    const userInfo = await db.collection('account_info').findOne({ username });
+
+    if (!userInfo || !userInfo.gmail) {
+      console.log("No email found for user:", username);
+      return res.status(404).json({ message: 'Email not found for user' });
+    }
+
+    const otp = generateOTP();
+
+    // Save OTP to `users` collection
+    const userUpdate = await db.collection('users').updateOne(
+      { username },
+      { $set: { otp } }
+    );
+
+    if (userUpdate.matchedCount === 0) {
+      console.log("User not found in users collection:", username);
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // const transporter = nodemailer.createTransport({
+    //   service: 'gmail',
+    //   auth: {
+    //     user: "bennydictuz3@gmail.com", // email
+    //     pass: "Maur12345",              // app-specific password (not Gmail password)
+    //   },
+    // });
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: "onlineshopmacky@gmail.com",
+        pass: "yiqg icdd jjzh pdvg", // This should be a Gmail App Password (not regular password)
+      },
+      tls: {
+        rejectUnauthorized: false, // Add this line to allow self-signed certificates
+      },
+    });
+    
+
+    await transporter.sendMail({
+      from: "bennydictuz3@gmail.com",
+      to: userInfo.gmail,
+      // to: "onlineshopmacky@gmail.com",
+      subject: 'Password Reset OTP',
+      text: `Your OTP is: ${otp}`,
+    });
+
+    return res.status(200).json({ message: 'OTP sent successfully' });
+
+  } catch (err) {
+    console.error("Error in /api/forgot-password:", err);
+    return res.status(500).json({ message: 'Error sending OTP' });
+  }
+});
+
+
+app.post('/api/reset-password', async (req, res) => {
+  const { username, otp, newPassword } = req.body;
+
+  try {
+    const user = await db.collection('users').findOne({ username });
+
+    if (!user || user.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.collection('users').updateOne(
+      { username },
+      { $set: { password: hashedPassword }, $unset: { otp: "" } }
+    );
+
+    res.status(200).json({ message: 'Password reset successful' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error resetting password' });
+  }
+});
+
 
 // --------------------------END OF USER ACCOUNT--------------------------
 
@@ -246,9 +333,37 @@ app.get('/api/account-info/:username', async (req, res) => {
   }
 });
 
+// app.post('/api/update-account', async (req, res) => {
+//   try {
+//     const { username, region, houseStreet, recipientName, phoneNumber } = req.body;
+
+//     if (!username) {
+//       return res.status(400).json({ message: 'Username is required.' });
+//     }
+
+//     const existingInfo = await db.collection('account_info').findOne({ username });
+
+//     if (existingInfo) {
+//       // Update existing info
+//       await db.collection('account_info').updateOne(
+//         { username },
+//         { $set: { region, houseStreet, recipientName, phoneNumber } }
+//       );
+//     } else {
+//       // Insert new info
+//       await db.collection('account_info').insertOne({ username, region, houseStreet, recipientName, phoneNumber });
+//     }
+
+//     return res.status(200).json({ message: 'Account info saved successfully.' });
+//   } catch (err) {
+//     console.error('Error updating account info:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+
 app.post('/api/update-account', async (req, res) => {
   try {
-    const { username, region, houseStreet, recipientName, phoneNumber } = req.body;
+    const { username, region, houseStreet, recipientName, phoneNumber, gmail } = req.body;
 
     if (!username) {
       return res.status(400).json({ message: 'Username is required.' });
@@ -260,11 +375,11 @@ app.post('/api/update-account', async (req, res) => {
       // Update existing info
       await db.collection('account_info').updateOne(
         { username },
-        { $set: { region, houseStreet, recipientName, phoneNumber } }
-      );
+        { $set: { region, houseStreet, recipientName, phoneNumber, gmail } }
+      );      
     } else {
       // Insert new info
-      await db.collection('account_info').insertOne({ username, region, houseStreet, recipientName, phoneNumber });
+      await db.collection('account_info').insertOne({ username, region, houseStreet, recipientName, phoneNumber, gmail });
     }
 
     return res.status(200).json({ message: 'Account info saved successfully.' });

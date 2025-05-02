@@ -19,6 +19,7 @@
     "git": "^0.1.5",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.14.0",
+    "nodemailer": "^6.10.1",
     "router": "^2.2.0"
   }
 }
