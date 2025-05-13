@@ -118,6 +118,49 @@ app.post('/api/signup', async (req, res) => {
 //   }
 // });
 
+// app.post('/api/login', async (req, res) => {
+//   try {
+//     const { username, password } = req.body;
+
+//     if (!username || !password) {
+//       return res.status(400).json({ message: 'Username and password are required.' });
+//     }
+
+//     const user = await db.collection('users').findOne({ username });
+//     if (!user) {
+//       return res.status(404).json({ message: 'User not found.' });
+//     }
+
+//     let isPasswordValid = false;
+
+//     // Check if the stored password is a bcrypt hash (typically starts with $2a$, $2b$, or $2y$)
+//     if (user.password.startsWith('$2')) {
+//       isPasswordValid = await bcrypt.compare(password, user.password);
+//     } else {
+//       isPasswordValid = password === user.password;
+//     }
+
+//     if (!isPasswordValid) {
+//       return res.status(401).json({ message: 'Invalid credentials.' });
+//     }
+
+//     const token = generateToken(user);
+
+//     // Check if user has account info
+//     const userInfo = await db.collection('account_info').findOne({ username });
+
+//     return res.status(200).json({
+//       message: 'Login successful',
+//       token,
+//       needsUpdate: !userInfo,
+//     });
+//   } catch (err) {
+//     console.error('Error during login:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+
+// With active user ID
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -133,7 +176,6 @@ app.post('/api/login', async (req, res) => {
 
     let isPasswordValid = false;
 
-    // Check if the stored password is a bcrypt hash (typically starts with $2a$, $2b$, or $2y$)
     if (user.password.startsWith('$2')) {
       isPasswordValid = await bcrypt.compare(password, user.password);
     } else {
@@ -144,14 +186,22 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
-    const token = generateToken(user);
+    // Check if user is already logged in on another device
+    if (user.activeUserID) {
+      return res.status(409).json({ message: 'User already logged in on another device.' });
+    }
 
-    // Check if user has account info
+    const token = generateToken(user);
+    const activeUserID = crypto.randomBytes(16).toString('hex');
+
+    await db.collection('users').updateOne({ username }, { $set: { activeUserID } });
+
     const userInfo = await db.collection('account_info').findOne({ username });
 
     return res.status(200).json({
       message: 'Login successful',
       token,
+      activeUserID,
       needsUpdate: !userInfo,
     });
   } catch (err) {
@@ -159,6 +209,28 @@ app.post('/api/login', async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
+
+
+app.post('/api/logout', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ message: 'Username is required for logout.' });
+    }
+
+    await db.collection('users').updateOne(
+      { username },
+      { $unset: { activeUserID: "" } }
+    );
+
+    return res.status(200).json({ message: 'Logout successful, activeUserID removed.' });
+  } catch (err) {
+    console.error('Error during logout:', err);
+    return res.status(500).json({ message: 'Internal server error during logout.' });
+  }
+});
+
+
 
 // User change password
 // Change password
@@ -253,13 +325,6 @@ app.post('/api/forgot-password', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // const transporter = nodemailer.createTransport({
-    //   service: 'gmail',
-    //   auth: {
-    //     user: "bennydictuz3@gmail.com", // email
-    //     pass: "Maur12345",              // app-specific password (not Gmail password)
-    //   },
-    // });
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -288,7 +353,6 @@ app.post('/api/forgot-password', async (req, res) => {
   }
 });
 
-
 app.post('/api/reset-password', async (req, res) => {
   const { username, otp, newPassword } = req.body;
 
@@ -312,7 +376,65 @@ app.post('/api/reset-password', async (req, res) => {
   }
 });
 
+app.post('/api/send-force-logout-otp', async (req, res) => {
+  const { username } = req.body;
 
+  try {
+    const userInfo = await db.collection('account_info').findOne({ username });
+    if (!userInfo?.gmail) return res.status(404).json({ message: 'Email not found for user' });
+
+    const otp = generateOTP();
+    await db.collection('users').updateOne({ username }, { $set: { otp } });
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: "onlineshopmacky@gmail.com",
+        pass: "yiqg icdd jjzh pdvg", // This should be a Gmail App Password (not regular password)
+      },
+      tls: {
+        rejectUnauthorized: false, // Add this line to allow self-signed certificates
+      },
+    });
+
+    await transporter.sendMail({
+      from: "bennydictuz3@gmail.com",
+      to: userInfo.gmail,
+      subject: 'Login Verification Code for This Device',
+      text: `Your OTP to continue login on this device is: ${otp}`,
+    });
+
+    return res.status(200).json({ message: 'OTP sent successfully' });
+  } catch (err) {
+    console.error("Error sending OTP:", err);
+    res.status(500).json({ message: 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/verify-force-logout-otp', async (req, res) => {
+  const { username, otp } = req.body;
+
+  try {
+    const user = await db.collection('users').findOne({ username });
+
+    if (!user || user.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    await db.collection('users').updateOne(
+      { username },
+      { $unset: { activeUserID: "", otp: "" } }
+    );
+
+    res.status(200).json({ message: 'User forcibly logged out' });
+  } catch (err) {
+    console.error('Error verifying OTP:', err);
+    res.status(500).json({ message: 'Error verifying OTP' });
+  }
+});
+
+
+  
 // --------------------------END OF USER ACCOUNT--------------------------
 
 // ---------------------USER INFO--------------------------------
@@ -708,13 +830,143 @@ app.delete('/api/delete-cart/:id', async (req, res) => {
 // });
 
 
+// app.post('/api/place-order', async (req, res) => {
+//   try {
+//     const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
+
+//     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
+//       return res.status(400).json({ message: 'Invalid order request.' });
+//     }
+
+//     const userCart2 = db.collection('userCart');
+//     const userShippingCollection = db.collection('userShipping');
+//     const stocksCollection = db.collection('stocks');
+//     const auditLogs = db.collection('auditTrailLogs');
+//     const accountInfoCollection = db.collection('account_info');
+
+//     const accountInfo = await accountInfoCollection.findOne({ username });
+
+//     for (const item of selectedItems) {
+//       const { _id, quantity, productID } = item;
+
+//       // Move item to userShipping
+//       await userShippingCollection.insertOne({
+//         username,
+//         staffUsername: item.staffUsername,
+//         productID: item.productID,
+//         productName: item.product.productName,
+//         price: totalPrice,
+//         quantity: item.quantity,
+//         paymentMethod,
+//         shippingDate: shippingOptions[item._id] || 'Standard',
+//         imageUrl: item.product.imageUrl,
+//         orderedAt: new Date(),
+//       });
+
+//       // Update product quantity in stocks using productID
+//       await stocksCollection.updateOne(
+//         { productID: productID },
+//         { $inc: { quantity: -quantity } }
+//       );
+
+//       // Log audit per item
+//       const auditEntry = {
+//         username,
+//         action: 'Place an Order',
+//         role: 'Customer',
+//         affectedId: productID,
+//         timestamp: new Date(),
+//         accountInfo: accountInfo || {},
+//       };
+//       await auditLogs.insertOne(auditEntry);
+//     }
+
+//     // Remove all items from cart
+//     await userCart2.deleteMany({
+//       username,
+//       _id: { $in: selectedItems.map(item => item._id) }
+//     });
+
+//     const transporter = nodemailer.createTransport({
+//       service: 'gmail',
+//       auth: {
+//         user: "onlineshopmacky@gmail.com",
+//         pass: "yiqg icdd jjzh pdvg", // This should be a Gmail App Password (not regular password)
+//       },
+//       tls: {
+//         rejectUnauthorized: false, // Add this line to allow self-signed certificates
+//       },
+//     });
+
+//     // const mailOptions = {
+//     //   from: "onlineshopmacky@gmail.com",
+//     //   to: accountInfo.gmail, // User's Gmail address
+//     //   subject: 'Order Confirmation',
+//     //   text: `Hello ${accountInfo.recipientName},\n\nYour order has been successfully placed!\n\nOrder Details:\n\nTotal Price: ₱${totalPrice}\nPayment Method: ${paymentMethod}\nShipping Address: ${accountInfo.houseStreet}, ${accountInfo.region}\n\nThank you for shopping with us!`,
+//     // };
+//     const itemDetails = selectedItems.map((item, index) => {
+//       return `Item ${index + 1}:
+//       - Product: ${item.product.productName}
+//       - Price: ₱${item.product.price}
+//       - Quantity: ${item.quantity}
+//       - Payment Method: ${paymentMethod}
+//       - Shipping Date: ${shippingOptions[item._id] || 'Standard'}\n`;
+//     }).join('\n');
+
+//     const mailOptions = {
+//       from: "onlineshopmacky@gmail.com",
+//       to: accountInfo.gmail, // User's Gmail address
+//       subject: 'Your Receipt from Macky\'s Online Shop',
+//       text: `Hello ${accountInfo.recipientName},
+
+//     Thank you for shopping with us! Your order has been placed successfully.
+
+//     🧾 RECEIPT:
+
+//     ${itemDetails}
+//     Total Price: ₱${totalPrice}
+
+//     Shipping Address:
+//     ${accountInfo.houseStreet}, ${accountInfo.region}
+
+//     We appreciate your business. Let us know if you have any questions!
+
+//     - Macky’s Online Shop Team`,
+//     };    
+
+//     transporter.sendMail(mailOptions, (error, info) => {
+//       if (error) {
+//         console.log('Error sending email:', error);
+//       } else {
+//         console.log('Email sent: ' + info.response);
+//       }
+//     });
+
+//     res.status(200).json({ message: 'Order placed successfully, audit logged, and confirmation email sent.' });
+//   } catch (error) {
+//     console.error("Error placing order:", error);
+//     res.status(500).json({ message: 'Failed to place order.' });
+//   }
+// });
+// Modify 5/8
+// Function to generate random userOrderID
+function generateOrderID(length = 10) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 app.post('/api/place-order', async (req, res) => {
   try {
-    const { username, selectedItems, paymentMethod, shippingOptions, totalPrice } = req.body;
+    const { username, selectedItems, paymentMethod, shippingOptions, shippingPrice, totalPrice } = req.body;
 
     if (!username || !selectedItems || selectedItems.length === 0 || !paymentMethod) {
       return res.status(400).json({ message: 'Invalid order request.' });
     }
+
+    const userOrderID = generateOrderID();
 
     const userCart2 = db.collection('userCart');
     const userShippingCollection = db.collection('userShipping');
@@ -729,12 +981,14 @@ app.post('/api/place-order', async (req, res) => {
 
       // Move item to userShipping
       await userShippingCollection.insertOne({
+        userOrderID,
         username,
         staffUsername: item.staffUsername,
         productID: item.productID,
         productName: item.product.productName,
-        price: totalPrice,
+        price: item.price,
         quantity: item.quantity,
+        shippingPrice: shippingPrice,
         paymentMethod,
         shippingDate: shippingOptions[item._id] || 'Standard',
         imageUrl: item.product.imageUrl,
@@ -776,11 +1030,41 @@ app.post('/api/place-order', async (req, res) => {
       },
     });
 
+    const itemDetails = selectedItems.map((item, index) => {
+      const shippingObj = shippingOptions[item._id];
+      const shippingDate = shippingObj?.shippingDate
+        ? new Date(shippingObj.shippingDate).toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        })
+        : 'Standard';
+
+      return `Item ${index + 1}:
+      - Product: ${item.product.productName}
+      - Price: ₱${item.price}
+      - Quantity: ${item.quantity}
+      - Payment Method: ${paymentMethod}
+      - Shipping Date: ${shippingDate}\n`;
+    }).join('\n');
+
     const mailOptions = {
       from: "onlineshopmacky@gmail.com",
       to: accountInfo.gmail, // User's Gmail address
-      subject: 'Order Confirmation',
-      text: `Hello ${accountInfo.recipientName},\n\nYour order has been successfully placed!\n\nOrder Details:\n\nTotal Price: ₱${totalPrice}\nPayment Method: ${paymentMethod}\nShipping Address: ${accountInfo.houseStreet}, ${accountInfo.region}\n\nThank you for shopping with us!`,
+      subject: 'Your Receipt from Macky\'s Online Shop',
+      text: `Hello ${accountInfo.recipientName},
+    
+    Thank you for shopping with us! Your order has been placed successfully.
+    
+    🧾 RECEIPT:
+    
+    ${itemDetails}
+    Total Price: ₱${totalPrice}
+    
+    Shipping Address:
+    ${accountInfo.houseStreet}, ${accountInfo.region}
+    
+    If you have any questions regarding your order, feel free to contact our support team.
+    
+    - Macky’s Online Shop Team`,
     };
 
     transporter.sendMail(mailOptions, (error, info) => {
@@ -1110,10 +1394,59 @@ app.get('/api/all-order-received', async (req, res) => {
 
 // Fetch and insert to Order Received
 // Marking order as received with Audit Trail Logs
-app.post('/api/mark-received/:orderId', async (req, res) => {
+// app.post('/api/mark-received/:orderId', async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { orderReceivedDate, staffUsername } = req.body;
+
+//     if (!orderId || !staffUsername) {
+//       return res.status(400).json({ message: "Order ID and staffUsername are required." });
+//     }
+
+//     const toReceive = db.collection('toReceive');
+//     const orderReceived = db.collection('orderReceived');
+//     const staffCollection = db.collection('staff');
+//     const auditLogs = db.collection('auditTrailLogs');
+
+//     const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
+
+//     if (!order) {
+//       return res.status(404).json({ message: "Order not found in toReceive." });
+//     }
+
+//     // Attach received date
+//     order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
+
+//     // Move to orderReceived
+//     await orderReceived.insertOne(order);
+//     await toReceive.deleteOne({ _id: new ObjectId(orderId) });
+
+//     // Fetch staff info for audit log
+//     const staffInfo = await staffCollection.findOne({ username: staffUsername });
+
+//     // Add to audit trail
+//     const auditEntry = {
+//       username: staffUsername,
+//       action: "Staff Marked Order as Received",
+//       role: "Staff",
+//       affectedId: order.productID,
+//       timestamp: new Date(),
+//       accountInfo: staffInfo || {},
+//     };
+
+//     await auditLogs.insertOne(auditEntry);
+
+//     res.status(200).json({ message: "Order marked as received." });
+//   } catch (error) {
+//     console.error("Error marking order as received:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+
+// Moving orders to received orders
+app.post('/api/mark-received', async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const { orderReceivedDate, staffUsername } = req.body;
+    const { orderId, orderReceivedDate, staffUsername } = req.body;
 
     if (!orderId || !staffUsername) {
       return res.status(400).json({ message: "Order ID and staffUsername are required." });
@@ -1124,40 +1457,49 @@ app.post('/api/mark-received/:orderId', async (req, res) => {
     const staffCollection = db.collection('staff');
     const auditLogs = db.collection('auditTrailLogs');
 
-    const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
+    // Step 1: Find the order by _id to get the userOrderID
+    const singleOrder = await toReceive.findOne({ _id: new ObjectId(orderId) });
+    if (!singleOrder) return res.status(404).json({ message: "Order not found." });
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found in toReceive." });
-    }
+    const { userOrderID } = singleOrder;
 
-    // Attach received date
-    order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
+    // Step 2: Find all orders with the same userOrderID
+    const relatedOrders = await toReceive.find({ userOrderID }).toArray();
 
-    // Move to orderReceived
-    await orderReceived.insertOne(order);
-    await toReceive.deleteOne({ _id: new ObjectId(orderId) });
+    // Step 3: Set the received date for each order
+    const dateToUse = orderReceivedDate || new Date().toISOString().split('T')[0];
+    const ordersWithDate = relatedOrders.map(order => ({
+      ...order,
+      orderReceivedDate: dateToUse
+    }));
 
-    // Fetch staff info for audit log
+    // Step 4: Insert them into orderReceived
+    await orderReceived.insertMany(ordersWithDate);
+
+    // Step 5: Delete them from toReceive
+    await toReceive.deleteMany({ userOrderID });
+
+    // Step 6: Log audit once per userOrderID
     const staffInfo = await staffCollection.findOne({ username: staffUsername });
 
-    // Add to audit trail
     const auditEntry = {
       username: staffUsername,
-      action: "Staff Marked Order as Received",
+      action: `Staff marked all orders for userOrderID ${userOrderID} as received`,
       role: "Staff",
-      affectedId: order.productID,
+      affectedId: userOrderID,
       timestamp: new Date(),
       accountInfo: staffInfo || {},
     };
 
     await auditLogs.insertOne(auditEntry);
 
-    res.status(200).json({ message: "Order marked as received." });
+    res.status(200).json({ message: "Order group marked as received." });
   } catch (error) {
-    console.error("Error marking order as received:", error);
+    console.error("Error marking order as received:", error.message, error.stack);
     res.status(500).json({ message: "Internal server error." });
   }
 });
+
 
 // Cancel Order with Audit trail logs
 app.post('/api/cancel-order/:orderId', async (req, res) => {
@@ -1870,28 +2212,92 @@ app.delete('/api/product-maintenance/:id', async (req, res) => {
 //   }
 // });
 // Add a new product with productID
+// app.post('/api/add-product', async (req, res) => {
+//   try {
+//     const { staffUsername, productID, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
+
+//     if (!productName || !category || !brand || !color || !imageUrl || !staffUsername) {
+//       return res.status(400).json({ message: 'Missing required fields or staff username.' });
+//     }
+
+//     const newProduct = {
+//       staffUsername,
+//       productID,
+//       productName,
+//       category,
+//       subCategory: subCategory?.trim() || null,
+//       brand,
+//       gender: gender?.trim() || null,
+//       size: size?.trim() || null,
+//       color,
+//       imageUrl,
+//       createdAt: new Date(),
+//     };
+
+//     await db.collection('products').insertOne(newProduct);
+
+//     // Fetch staff info
+//     const staffCollection = db.collection('staff');
+//     const staffInfo = await staffCollection.findOne({ username: staffUsername });
+
+//     // Insert audit trail log
+//     const auditLogs = db.collection('auditTrailLogs');
+//     await auditLogs.insertOne({
+//       username: staffUsername,
+//       role: "Staff",
+//       action: 'Staff Added New Product',
+//       affectedId: null,
+//       timestamp: new Date(),
+//       accountInfo: staffInfo || {},
+//     });
+
+//     return res.status(201).json({ message: 'Product added successfully.' });
+//   } catch (err) {
+//     console.error('Error adding product:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+// With multiple images
 app.post('/api/add-product', async (req, res) => {
   try {
-    const { staffUsername, productID, productName, category, subCategory, brand, gender, size, color, imageUrl } = req.body;
-
-    if (!productName || !category || !brand || !color || !imageUrl || !staffUsername) {
-      return res.status(400).json({ message: 'Missing required fields or staff username.' });
-    }
-
-    const newProduct = {
+    const {
       staffUsername,
       productID,
       productName,
       category,
-      subCategory: subCategory?.trim() || null,
+      subCategory,
       brand,
-      gender: gender?.trim() || null,
+      sex,
+      size,
+      color,
+      imageUrls
+    } = req.body; // imageUrls is now an array
+
+    if (!productName || !category || !brand || !color || !imageUrls) {
+      return res.status(400).json({ message: 'Missing required fields or staff username.' });
+    }
+
+    // Make sure imageUrls is an array of strings
+    if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
+      return res.status(400).json({ message: 'Please provide at least one image URL.' });
+    }
+
+    // Process product data
+    const newProduct = {
+      staffUsername: staffUsername || null,
+      productID,
+      productName,
+      category,
+      subCategory: subCategory?.trim() || null,
+      sex,
+      brand,
       size: size?.trim() || null,
       color,
-      imageUrl,
+      imageUrls, // Store the array of image URLs
       createdAt: new Date(),
     };
 
+    // Insert new product into database
     await db.collection('products').insertOne(newProduct);
 
     // Fetch staff info
@@ -1917,10 +2323,88 @@ app.post('/api/add-product', async (req, res) => {
 });
 
 // Update product with Audit Trail Logs
+// app.put('/api/update-product/:id', async (req, res) => {
+//   try {
+//     const productId = req.params.id;
+//     const { productName, category, subCategory, gender, size, color, imageUrl, staffUsername } = req.body;
+
+//     if (!productId) {
+//       return res.status(400).json({ message: 'Product ID is required.' });
+//     }
+
+//     if (!staffUsername) {
+//       return res.status(400).json({ message: 'Staff username is required for audit logging.' });
+//     }
+
+//     const updatedProduct = {
+//       ...(productName && { productName }),
+//       ...(category && { category }),
+//       ...(subCategory && { subCategory }),
+//       ...(gender && { gender }),
+//       ...(size && { size }),
+//       ...(color && { color }),
+//       ...(imageUrl && { imageUrl }),
+//       updatedAt: new Date(),
+//     };
+
+//     const result = await db.collection('products').updateOne(
+//       { _id: new ObjectId(productId) },
+//       { $set: updatedProduct }
+//     );
+
+//     if (result.modifiedCount === 0) {
+//       return res.status(404).json({ message: 'Product not found or no changes made.' });
+//     }
+
+//     // // Audit Trail Logging
+//     // const staff = await db.collection('staff').findOne({ username: staffUsername });
+//     // if (staff) {
+//     //   await db.collection('auditTrailLogs').insertOne({
+//     //     staffFullname: staff.staffFullname,
+//     //     staffUsername,
+//     //     role: "Staff",
+//     //     action: 'Staff Updated Product',
+//     //     affectedId: productId,
+//     //     timestamp: new Date()
+//     //   });
+//     // }
+
+//     // Fetch staff info
+//     const staffCollection = db.collection('staff');
+//     const staffInfo = await staffCollection.findOne({ username: staffUsername });
+
+//     // Insert audit trail log
+//     const auditLogs = db.collection('auditTrailLogs');
+//     await auditLogs.insertOne({
+//       username: staffUsername,
+//       role: "Staff",
+//       action: 'Staff Updated Product',
+//       affectedId: productId,
+//       timestamp: new Date(),
+//       accountInfo: staffInfo || {},
+//     });
+
+//     return res.status(200).json({ message: 'Product updated successfully.' });
+//   } catch (err) {
+//     console.error('Error updating product:', err);
+//     return res.status(500).json({ message: 'Internal server error.' });
+//   }
+// });
+// With multiple images
 app.put('/api/update-product/:id', async (req, res) => {
   try {
     const productId = req.params.id;
-    const { productName, category, subCategory, gender, size, color, imageUrl, staffUsername } = req.body;
+    const {
+      productName,
+      category,
+      subCategory,
+      brand,
+      size,
+      color,
+      sex,
+      imageUrls, // ✅ Expecting an array
+      staffUsername
+    } = req.body;
 
     if (!productId) {
       return res.status(400).json({ message: 'Product ID is required.' });
@@ -1934,10 +2418,11 @@ app.put('/api/update-product/:id', async (req, res) => {
       ...(productName && { productName }),
       ...(category && { category }),
       ...(subCategory && { subCategory }),
-      ...(gender && { gender }),
+      ...(brand && { brand }),
       ...(size && { size }),
       ...(color && { color }),
-      ...(imageUrl && { imageUrl }),
+      ...(sex && { sex }),
+      ...(imageUrls && { imageUrls }), // ✅ Now supports multiple images
       updatedAt: new Date(),
     };
 
@@ -1950,20 +2435,7 @@ app.put('/api/update-product/:id', async (req, res) => {
       return res.status(404).json({ message: 'Product not found or no changes made.' });
     }
 
-    // // Audit Trail Logging
-    // const staff = await db.collection('staff').findOne({ username: staffUsername });
-    // if (staff) {
-    //   await db.collection('auditTrailLogs').insertOne({
-    //     staffFullname: staff.staffFullname,
-    //     staffUsername,
-    //     role: "Staff",
-    //     action: 'Staff Updated Product',
-    //     affectedId: productId,
-    //     timestamp: new Date()
-    //   });
-    // }
-
-    // Fetch staff info
+    // Fetch staff info for audit log
     const staffCollection = db.collection('staff');
     const staffInfo = await staffCollection.findOne({ username: staffUsername });
 
@@ -1984,6 +2456,7 @@ app.put('/api/update-product/:id', async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
+
 
 // Remove products with Audit Trail Logs
 app.delete('/api/delete-product/:id', async (req, res) => {
@@ -2769,7 +3242,7 @@ app.post('/api/admin', async (req, res) => {
 // Add a new product with productID
 app.post('/api/adminadd-product-maintenance', async (req, res) => {
   try {
-    let { category, subCategory, brand, color, sizes, productID } = req.body;
+    let { category, subCategory, brand, color, sizes, sex, productID } = req.body;
 
     // Generate productID if not provided
     if (!productID) {
@@ -2783,7 +3256,7 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
     color = Array.isArray(color) ? color : [color];
     sizes = Array.isArray(sizes) ? sizes : [sizes];
 
-    const newEntry = { productID, category, subCategory, brand, color, sizes };
+    const newEntry = { productID, category, subCategory, brand, color, sizes, sex };
 
     const result = await productMaintenanceCollection().insertOne(newEntry);
 
@@ -2979,7 +3452,7 @@ app.post('/api/admin-add-product', async (req, res) => {
 app.put('/api/admin-update-product/:id', async (req, res) => {
   try {
     const productId = req.params.id;
-    const { productName, category, subCategory, gender, size, color, imageUrl } = req.body;
+    const { productName, category, subCategory, gender, size, color, imageUrls } = req.body;
 
     if (!productId) {
       return res.status(400).json({ message: 'Product ID is required.' });
@@ -2992,7 +3465,7 @@ app.put('/api/admin-update-product/:id', async (req, res) => {
       ...(gender && { gender }),
       ...(size && { size }),
       ...(color && { color }),
-      ...(imageUrl && { imageUrl }),
+      ...(imageUrls && { imageUrls }),
       updatedAt: new Date(),
     };
 
@@ -3174,10 +3647,10 @@ app.post('/api/admin-add-delivery', async (req, res) => {
         category: product.category,
         subCategory: product.subCategory,
         brand: product.brand,
-        gender: product.gender || null,
+        gender: product.sex || null,
         size: product.size || null,
         color: product.color,
-        imageUrl: product.imageUrl,
+        imageUrl: product.imageUrls,
       },
       supplier: {
         supplierID: supplier.supplierID,
@@ -3359,83 +3832,83 @@ app.post('/api/admin-restocks', async (req, res) => {
 //     res.status(500).json({ message: "Internal server error" });
 //   }
 // });
-// app.post('/api/set-as-delivered/:id', async (req, res) => {
-//   try {
-//     const deliveryId = req.params.id;
-//     const { staffUsername } = req.body;
+app.post('/api/set-as-delivered/:id', async (req, res) => {
+  try {
+    const deliveryId = req.params.id;
+    const { staffUsername } = req.body;
 
-//     if (!staffUsername) {
-//       return res.status(400).json({ message: "Staff username is required." });
-//     }
+    if (!staffUsername) {
+      return res.status(400).json({ message: "Staff username is required." });
+    }
 
-//     // Find the delivery from the deliveries collection
-//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+    // Find the delivery from the deliveries collection
+    const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
 
-//     if (!delivery) {
-//       return res.status(404).json({ message: "Delivery not found." });
-//     }
+    if (!delivery) {
+      return res.status(404).json({ message: "Delivery not found." });
+    }
 
-//     const stocksCollection = db.collection('stocks');
+    const stocksCollection = db.collection('stocks');
 
-//     // Check if the delivery has already been processed into stocks
-//     const existingStock = await stocksCollection.findOne({ deliveryID: delivery.deliveryID });
+    // Check if the delivery has already been processed into stocks
+    const existingStock = await stocksCollection.findOne({ deliveryID: delivery.deliveryID });
 
-//     if (existingStock) {
-//       // If it exists, update the stock
-//       await stocksCollection.updateOne(
-//         { deliveryID: delivery.deliveryID },
-//         {
-//           $set: {
-//             supplierPrice: delivery.supplierPrice,
-//             shopPrice: delivery.shopPrice,
-//           },
-//           $inc: {
-//             quantity: delivery.quantity, // increment the stock quantity
-//           },
-//         }
-//       );
-//     } else {
-//       // If it doesn't exist, insert a new stock record
-//       await stocksCollection.insertOne({
-//         deliveryID: delivery.deliveryID,
-//         productID: delivery.productID,
-//         product: delivery.product,
-//         supplier: delivery.supplier,
-//         supplierPrice: delivery.supplierPrice,
-//         shopPrice: delivery.shopPrice,
-//         quantity: delivery.quantity,
-//         totalCost: delivery.totalCost,
-//         staffUsername: delivery.staffUsername,
-//         deliveredAt: new Date(),
-//       });
-//     }
+    if (existingStock) {
+      // If it exists, update the stock
+      await stocksCollection.updateOne(
+        { deliveryID: delivery.deliveryID },
+        {
+          $set: {
+            supplierPrice: delivery.supplierPrice,
+            shopPrice: delivery.shopPrice,
+          },
+          $inc: {
+            quantity: delivery.quantity, // increment the stock quantity
+          },
+        }
+      );
+    } else {
+      // If it doesn't exist, insert a new stock record
+      await stocksCollection.insertOne({
+        deliveryID: delivery.deliveryID,
+        productID: delivery.productID,
+        product: delivery.product,
+        supplier: delivery.supplier,
+        supplierPrice: delivery.supplierPrice,
+        shopPrice: delivery.shopPrice,
+        quantity: delivery.quantity,
+        totalCost: delivery.totalCost,
+        staffUsername: delivery.staffUsername,
+        deliveredAt: new Date(),
+      });
+    }
 
-//     // Insert into delivery history
-//     await db.collection('delivery_history').insertOne({
-//       ...delivery,
-//       deliveredAt: new Date(),
-//     });
+    // Insert into delivery history
+    await db.collection('delivery_history').insertOne({
+      ...delivery,
+      deliveredAt: new Date(),
+    });
 
-//     // Remove the delivery from the deliveries collection
-//     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+    // Remove the delivery from the deliveries collection
+    await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
 
-//     // Log the audit trail
-//     const staffInfo = await db.collection('staff').findOne({ username: staffUsername });
-//     await db.collection('auditTrailLogs').insertOne({
-//       username: staffUsername,
-//       role: 'Staff',
-//       action: 'Staff Set a Delivered Product',
-//       affectedId: delivery.productID,
-//       timestamp: new Date(),
-//       accountInfo: staffInfo || {},
-//     });
+    // Log the audit trail
+    const staffInfo = await db.collection('staff').findOne({ username: staffUsername });
+    await db.collection('auditTrailLogs').insertOne({
+      username: staffUsername,
+      role: 'Staff',
+      action: 'Staff Set a Delivered Product',
+      affectedId: delivery.productID,
+      timestamp: new Date(),
+      accountInfo: staffInfo || {},
+    });
 
-//     return res.status(200).json({ message: "Set as delivered, added to stock, and logged to history." });
-//   } catch (err) {
-//     console.error('Error setting as delivered:', err);
-//     res.status(500).json({ message: "Internal server error" });
-//   }
-// });
+    return res.status(200).json({ message: "Set as delivered, added to stock, and logged to history." });
+  } catch (err) {
+    console.error('Error setting as delivered:', err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 // app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
 //   try {
@@ -3532,6 +4005,12 @@ app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
       });
     }
 
+    // Insert into delivery history
+    await db.collection('delivery_history').insertOne({
+      ...delivery,
+      deliveredAt: new Date(),
+    });
+
     // ✅ Move this outside the if...else so it runs in both cases
     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
 
@@ -3543,7 +4022,62 @@ app.post('/api/admin-set-as-delivered/:id', async (req, res) => {
   }
 });
 
+// Backend: Set all deliveries as delivered
+app.post('/api/set-all-delivered', async (req, res) => {
+  try {
+    const { staffUsername } = req.body;
 
+    const deliveries = db.collection("deliveries");
+    const stocks = db.collection("stocks");
+
+    const allDeliveries = await deliveries.find().toArray();
+
+    for (const delivery of allDeliveries) {
+      const existingStock = await stocks.findOne({ deliveryID: delivery.deliveryID });
+
+      if (existingStock) {
+        await stocks.updateOne(
+          { deliveryID: delivery.deliveryID },
+          {
+            $set: {
+              supplierPrice: delivery.supplierPrice,
+              shopPrice: delivery.shopPrice,
+            },
+            $inc: {
+              quantity: delivery.quantity,
+            },
+          }
+        );
+      } else {
+        await stocks.insertOne({
+          deliveryID: delivery.deliveryID,
+          productID: delivery.productID,
+          product: delivery.product,
+          supplier: delivery.supplier,
+          supplierPrice: delivery.supplierPrice,
+          shopPrice: delivery.shopPrice,
+          quantity: delivery.quantity,
+          totalCost: delivery.totalCost,
+          staffUsername: staffUsername || null,
+          deliveredAt: new Date(),
+        });
+      }
+
+      // Insert into delivery history
+      await db.collection('delivery_history').insertOne({
+        ...delivery,
+        deliveredAt: new Date(),
+      });
+
+      await deliveries.deleteOne({ _id: delivery._id });
+    }
+
+    res.status(200).json({ message: 'All deliveries marked as delivered and moved to stock.' });
+  } catch (err) {
+    console.error('Error setting all as delivered:', err);
+    res.status(500).json({ error: 'Failed to set all as delivered.' });
+  }
+});
 
 // ------------END OF ADMIN ADD A NEW DELIVERY PRODUCT API-------------------------
 
@@ -3719,29 +4253,70 @@ app.get('/api/deliveries', async (req, res) => {
 // -------------------END OF SUPPLIER------------------------------
 
 // admin mark as received
-app.post('/api/admin-mark-received/:orderId', async (req, res) => {
+// app.post('/api/admin-mark-received/:orderId', async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { orderReceivedDate } = req.body;
+
+//     const toReceive = db.collection('toReceive');
+//     const orderReceived = db.collection('orderReceived');
+
+//     const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
+
+//     if (!order) {
+//       return res.status(404).json({ message: "Order not found in toReceive." });
+//     }
+
+//     // Attach orderReceivedDate to order
+//     order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
+
+//     await orderReceived.insertMany(order);
+//     await toReceive.deleteMany({ _id: new ObjectId(orderId) });
+
+//     res.status(200).json({ message: "Order marked as received." });
+//   } catch (error) {
+//     console.error("Error marking order as received:", error);
+//     res.status(500).json({ message: "Internal server error." });
+//   }
+// });
+
+// Admin mark as orders received
+app.post('/api/admin-mark-received', async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const { orderReceivedDate } = req.body;
+    const { orderId, orderReceivedDate } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
 
     const toReceive = db.collection('toReceive');
     const orderReceived = db.collection('orderReceived');
 
-    const order = await toReceive.findOne({ _id: new ObjectId(orderId) });
+    // Step 1: Find the order by _id to get the userOrderID
+    const singleOrder = await toReceive.findOne({ _id: new ObjectId(orderId) });
+    if (!singleOrder) return res.status(404).json({ message: "Order not found." });
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found in toReceive." });
-    }
+    const { userOrderID } = singleOrder;
 
-    // Attach orderReceivedDate to order
-    order.orderReceivedDate = orderReceivedDate || new Date().toISOString().split('T')[0];
+    // Step 2: Find all orders with the same userOrderID
+    const relatedOrders = await toReceive.find({ userOrderID }).toArray();
 
-    await orderReceived.insertOne(order);
-    await toReceive.deleteOne({ _id: new ObjectId(orderId) });
+    // Step 3: Set the received date for each order
+    const dateToUse = orderReceivedDate || new Date().toISOString().split('T')[0];
+    const ordersWithDate = relatedOrders.map(order => ({
+      ...order,
+      orderReceivedDate: dateToUse
+    }));
 
-    res.status(200).json({ message: "Order marked as received." });
+    // Step 4: Insert them into orderReceived
+    await orderReceived.insertMany(ordersWithDate);
+
+    // Step 5: Delete them from toReceive
+    await toReceive.deleteMany({ userOrderID });
+
+    res.status(200).json({ message: "Order group marked as received." });
   } catch (error) {
-    console.error("Error marking order as received:", error);
+    console.error("Error marking order as received:", error.message, error.stack);
     res.status(500).json({ message: "Internal server error." });
   }
 });
@@ -3776,58 +4351,58 @@ app.post('/api/admin-cancel-order/:orderId', async (req, res) => {
 });
 
 // Updated set-as-delivered endpoint to handle productID check
-app.post('/api/set-as-delivered/:id', async (req, res) => {
-  try {
-    const deliveryId = req.params.id;
+// app.post('/api/set-as-delivered/:id', async (req, res) => {
+//   try {
+//     const deliveryId = req.params.id;
 
-    // Find the delivery by ID
-    const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
+//     // Find the delivery by ID
+//     const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(deliveryId) });
 
-    if (!delivery) {
-      return res.status(404).json({ message: "Delivery not found" });
-    }
+//     if (!delivery) {
+//       return res.status(404).json({ message: "Delivery not found" });
+//     }
 
-    const existingStock = await db.collection('stocks').findOne({ productID: delivery.productID });
+//     const existingStock = await db.collection('stocks').findOne({ productID: delivery.productID });
 
-    if (existingStock) {
-      // Update existing stock entry
-      await db.collection('stocks').updateOne(
-        { productID: delivery.productID },
-        {
-          $set: {
-            supplier: delivery.supplier,
-            supplierPrice: delivery.supplierPrice,
-            shopPrice: delivery.shopPrice,
-            totalCost: delivery.totalCost,
-          },
-          $inc: { quantity: delivery.quantity }, // Increment the quantity
-        }
-      );
-      res.status(200).json({ message: "Stock updated successfully" });
-    } else {
-      // Insert new stock entry
-      await db.collection('stocks').insertOne({
-        productID: delivery.productID,
-        product: delivery.product,
-        supplier: delivery.supplier,
-        supplierPrice: delivery.supplierPrice,
-        shopPrice: delivery.shopPrice,
-        quantity: delivery.quantity,
-        totalCost: delivery.totalCost,
-        staffUsername: delivery.staffUsername,
-        addedAt: new Date(),
-      });
-      res.status(200).json({ message: "Set as delivered and moved to stock" });
-    }
+//     if (existingStock) {
+//       // Update existing stock entry
+//       await db.collection('stocks').updateOne(
+//         { productID: delivery.productID },
+//         {
+//           $set: {
+//             supplier: delivery.supplier,
+//             supplierPrice: delivery.supplierPrice,
+//             shopPrice: delivery.shopPrice,
+//             totalCost: delivery.totalCost,
+//           },
+//           $inc: { quantity: delivery.quantity }, // Increment the quantity
+//         }
+//       );
+//       res.status(200).json({ message: "Stock updated successfully" });
+//     } else {
+//       // Insert new stock entry
+//       await db.collection('stocks').insertOne({
+//         productID: delivery.productID,
+//         product: delivery.product,
+//         supplier: delivery.supplier,
+//         supplierPrice: delivery.supplierPrice,
+//         shopPrice: delivery.shopPrice,
+//         quantity: delivery.quantity,
+//         totalCost: delivery.totalCost,
+//         staffUsername: delivery.staffUsername || null,
+//         addedAt: new Date(),
+//       });
+//       res.status(200).json({ message: "Set as delivered and moved to stock" });
+//     }
 
-    // Remove from deliveries collection
-    await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
+//     // Remove from deliveries collection
+//     await db.collection('deliveries').deleteOne({ _id: new ObjectId(deliveryId) });
 
-  } catch (err) {
-    console.error("Error setting as delivered:", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+//   } catch (err) {
+//     console.error("Error setting as delivered:", err);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
 
 // Delivered history
 app.get('/api/delivery-history', async (req, res) => {
