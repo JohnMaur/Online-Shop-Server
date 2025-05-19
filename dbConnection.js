@@ -3242,7 +3242,7 @@ app.post('/api/admin', async (req, res) => {
 // Add a new product with productID
 app.post('/api/adminadd-product-maintenance', async (req, res) => {
   try {
-    let { category, subCategory, brand, color, sizes, sex, productID } = req.body;
+    let { category, subCategory, brand, color, sizes, productID } = req.body;
 
     // Generate productID if not provided
     if (!productID) {
@@ -3256,7 +3256,7 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
     color = Array.isArray(color) ? color : [color];
     sizes = Array.isArray(sizes) ? sizes : [sizes];
 
-    const newEntry = { productID, category, subCategory, brand, color, sizes, sex };
+    const newEntry = { productID, category, subCategory, brand, color, sizes };
 
     const result = await productMaintenanceCollection().insertOne(newEntry);
 
