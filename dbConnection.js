@@ -3310,22 +3310,55 @@ app.post('/api/adminadd-product-maintenance', async (req, res) => {
 //   }
 // });
 // Add this route in your server
+// app.get('/api/check-category', async (req, res) => {
+//   try {
+//     const { category, excludeId } = req.query;
+//     const query = {
+//       category: Array.isArray(category) ? { $in: category } : category,
+//     };
+
+//     if (excludeId) {
+//       query._id = { $ne: new ObjectId(excludeId) };
+//     }
+
+//     const exists = await productMaintenanceCollection().findOne(query);
+//     res.json({ exists: !!exists });
+//   } catch (error) {
+//     console.error("Category check failed:", error);
+//     res.status(500).json({ error: "Internal Server Error" });
+//   }
+// });
 app.get('/api/check-category', async (req, res) => {
   try {
     const { category, excludeId } = req.query;
-    const query = {
-      category: Array.isArray(category) ? { $in: category } : category,
-    };
 
-    if (excludeId) {
-      query._id = { $ne: new ObjectId(excludeId) };
+    if (!category) {
+      return res.status(400).json({ error: "Category is required" });
     }
 
-    const exists = await productMaintenanceCollection().findOne(query);
-    res.json({ exists: !!exists });
+    const categoryRegex = new RegExp(`^${category}$`, 'i');
+
+    const matchQuery = {
+      $or: [
+        { category: categoryRegex }, // If category is a string
+        { category: { $elemMatch: { $regex: categoryRegex } } } // If category is an array
+      ]
+    };
+
+    const foundDoc = await productMaintenanceCollection().findOne(matchQuery);
+
+    if (!foundDoc) {
+      return res.json({ exists: false }); // No conflict, category is unique
+    }
+
+    if (excludeId && foundDoc._id.toString() === excludeId) {
+      return res.json({ exists: false }); // Same document — allow it
+    }
+
+    res.json({ exists: true }); // Category exists in another document — duplicate
   } catch (error) {
-    console.error("Category check failed:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Error checking category:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
