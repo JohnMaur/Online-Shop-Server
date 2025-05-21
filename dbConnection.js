@@ -1040,7 +1040,13 @@ app.post('/api/place-order', async (req, res) => {
 
       return `Item ${index + 1}:
       - Product: ${item.product.productName}
+      - Category: ${item.product.category}
+      - Sub category: ${item.product.subCategory}
+      - Brand: ${item.product.brand}
+      - Size: ${item.product.size}
+      - Color: ${item.product.color}
       - Price: ₱${item.price}
+      - Shipping Price: ₱${shippingPrice}
       - Quantity: ${item.quantity}
       - Payment Method: ${paymentMethod}
       - Shipping Date: ${shippingDate}\n`;
